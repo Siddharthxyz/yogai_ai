@@ -1,0 +1,132 @@
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --canvas: #f5f7fb;
+}
+
+.dark {
+  --canvas: #060816;
+}
+
+@layer base {
+  * {
+    @apply border-white/10;
+  }
+
+  html {
+    @apply scroll-smooth;
+  }
+
+  body {
+    @apply bg-[var(--canvas)] font-['Manrope'] text-slate-900 antialiased transition-colors duration-300 dark:text-slate-100;
+    background-image:
+      radial-gradient(circle at top, rgba(96, 165, 250, 0.08), transparent 28%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 30%);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-['Space_Grotesk'];
+  }
+
+  ::selection {
+    @apply bg-primary-400/30 text-white;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply border border-white/10 bg-white/60 shadow-[0_20px_60px_rgba(15,23,42,0.12)] backdrop-blur-xl dark:bg-slate-900/55;
+  }
+
+  .section-label {
+    @apply text-[11px] font-medium uppercase tracking-[0.24em] text-slate-400;
+  }
+}
+
+@layer utilities {
+  .bg-canvas {
+    background-color: var(--canvas);
+  }
+
+  .shadow-soft {
+    box-shadow: 0 20px 60px rgba(15, 23, 42, 0.16);
+  }
+}
+
+:root:not(.dark) .glass-panel {
+  background: rgba(255, 255, 255, 0.82);
+  border-color: rgba(148, 163, 184, 0.16);
+}
+
+:root:not(.dark) {
+  color: rgb(15 23 42);
+}
+
+:root:not(.dark) .text-white {
+  color: rgb(15 23 42) !important;
+}
+
+:root:not(.dark) .text-slate-100,
+:root:not(.dark) .text-slate-200 {
+  color: rgb(30 41 59) !important;
+}
+
+:root:not(.dark) .text-slate-300,
+:root:not(.dark) .text-slate-400 {
+  color: rgb(71 85 105) !important;
+}
+
+:root:not(.dark) .text-primary-200,
+:root:not(.dark) .text-primary-300 {
+  color: rgb(37 99 235) !important;
+}
+
+:root:not(.dark) .glass-panel .text-white {
+  color: rgb(15 23 42) !important;
+}
+
+:root:not(.dark) .glass-panel .text-slate-300,
+:root:not(.dark) .glass-panel .text-slate-400 {
+  color: rgb(71 85 105) !important;
+}
+
+:root:not(.dark) .glass-panel .text-primary-200 {
+  color: rgb(37 99 235) !important;
+}
+
+:root:not(.dark) .glass-panel .bg-white\/5,
+:root:not(.dark) .glass-panel .bg-white\/6,
+:root:not(.dark) .glass-panel .bg-white\/8 {
+  background-color: rgba(241, 245, 249, 0.92) !important;
+}
+
+:root:not(.dark) .border-white\/8,
+:root:not(.dark) .border-white\/10,
+:root:not(.dark) .border-white\/12 {
+  border-color: rgba(148, 163, 184, 0.2) !important;
+}
+
+:root:not(.dark) .bg-slate-950\/55,
+:root:not(.dark) .bg-slate-950\/70 {
+  background-color: rgba(255, 255, 255, 0.72) !important;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: 9999px;
+}
