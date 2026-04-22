@@ -1,0 +1,40 @@
+# YogAI Backend — Consolidated Requirements
+# =========================================
+
+# -- Web Framework --
+fastapi
+uvicorn
+python-multipart
+pydantic
+
+# -- Computer Vision & AI --
+opencv-python
+opencv-contrib-python
+mediapipe
+ultralytics
+Pillow
+numpy
+
+# -- Utilities --
+requests
+python-dotenv
+werkzeug
+
+# -- Additional (from Exercise Counter) --
+matplotlib
+sounddevice
+absl-py
+protobuf
+six
+zipp
+cffi
+fonttools
+kiwisolver
+pyparsing
+python-dateutil
+importlib-resources
+contourpy
+cycler
+flatbuffers
+packaging
+pycparser
