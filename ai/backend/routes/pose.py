@@ -3,6 +3,12 @@ import cv2
 import numpy as np
 
 from services.pose_module import PoseDetectorModified
+from services.yoga_service import LiveYogaTracker, live_yoga_sessions
+from services.recipe_service import RecipeService
+from pydantic import BaseModel
+
+class YogaRecommendRequest(BaseModel):
+    context: str
 
 pose_bp = APIRouter()
 detector = PoseDetectorModified()
@@ -37,6 +43,48 @@ async def handle_detect(image: UploadFile = File(...)):
 def yoga_status():
     return "Yoga detection backend running"
 
+
+@pose_bp.post("/yoga/start_live")
+def start_live_yoga(payload: dict):
+    pose_type = payload.get("pose_type", "tree")
+    source = payload.get("source", "0")
+    
+    tracker = LiveYogaTracker(pose_type=pose_type, source=source)
+    live_yoga_sessions[tracker.session_id] = tracker
+    tracker.start()
+    
+    return {"status": "started", "session_id": tracker.session_id, "pose_type": pose_type}
+
+
+@pose_bp.get("/yoga/status_live/{session_id}")
+def status_live_yoga(session_id: str):
+    tracker = live_yoga_sessions.get(session_id)
+    if not tracker:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return tracker.get_status()
+
+
+@pose_bp.post("/yoga/stop_live/{session_id}")
+def stop_live_yoga(session_id: str):
+    tracker = live_yoga_sessions.get(session_id)
+    if not tracker:
+        raise HTTPException(status_code=404, detail="Session not found")
+    tracker.stop()
+    del live_yoga_sessions[session_id]
+    return {"status": "stopped", "session_id": session_id}
+
+
+@pose_bp.post("/yoga/recommend")
+def recommend_yoga(req: YogaRecommendRequest):
+    rs = RecipeService()
+    prompt = (
+        "You are an AI Yoga Instructor. Based on the user's data, recommend ONE specific yoga pose "
+        "that would be beneficial for them. Keep it brief and motivating.\n"
+        f"User Data: {req.context}\n"
+        "Assistant:"
+    )
+    result = rs.query_groq(prompt)
+    return {"recommendation": result}
 
 @pose_bp.get("/yoga")
 def yoga_sessions():
