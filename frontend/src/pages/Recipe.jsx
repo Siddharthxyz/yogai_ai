@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot,
   ChefHat,
@@ -9,10 +9,15 @@ import {
   Send,
   Sparkles,
   Upload,
+  X,
 } from "lucide-react";
 import recipeAPI from "../services/recipeService";
 import api from "../services/api";
 import { Button, Card, FadeIn, MetricBox, cn } from "../components/ui";
+import { ChatHistory } from "../components/ChatBubble";
+import { useToast } from "../components/Toast";
+import { useAuth } from "../context/AuthContext";
+import { useStats } from "../context/StatsContext";
 
 function normalizeRecipe(recipe) {
   if (!recipe) return null;
@@ -124,15 +129,45 @@ function normalizeRecipe(recipe) {
 }
 
 export default function Recipe() {
+  const { user } = useAuth();
+  const { stats } = useStats();
+  const toast = useToast();
   const [image, setImage] = useState(null);
   const [ingredients, setIngredients] = useState([]);
   const [recipe, setRecipe] = useState(null);
-  const [chatReply, setChatReply] = useState("");
+  // Multi-turn chat messages: [{role, content, timestamp}]
+  const [chatMessages, setChatMessages] = useState([]);
   const [chatMessage, setChatMessage] = useState("");
   const [loadingRecipe, setLoadingRecipe] = useState(false);
   const [loadingChat, setLoadingChat] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [favoritesOpen, setFavoritesOpen] = useState(false);
+  const [favorites, setFavorites] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("yogai_favorites") || "[]"); } catch { return []; }
+  });
   const fileInputRef = useRef(null);
+  const chatEndRef = useRef(null);
+
+  // Load chat history from backend on mount
+  useEffect(() => {
+    api.get("/recipes").then((res) => {
+      const history = res.data;
+      if (Array.isArray(history) && history.length > 0) {
+        const formatted = history.flatMap((entry) => {
+          const msgs = [];
+          if (entry.message) msgs.push({ role: "user",      content: entry.message,  timestamp: entry.timestamp });
+          if (entry.reply)   msgs.push({ role: "assistant", content: entry.reply,    timestamp: entry.timestamp });
+          return msgs;
+        });
+        if (formatted.length > 0) setChatMessages(formatted);
+      }
+    }).catch(() => {}); // silently ignore if backend is offline
+  }, []);
+
+  // Auto-scroll chat to bottom
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages, loadingChat]);
 
   const canGenerate = useMemo(
     () => ingredients.some((ingredient) => ingredient.trim()),
@@ -151,9 +186,15 @@ export default function Recipe() {
     try {
       const response = await recipeAPI.post("/upload", formData);
       const detected = response.data.ingredients || [];
+      if (detected.length === 0) {
+        toast.warning("No ingredients found", "Try a clearer photo with visible food items.");
+      } else {
+        toast.success(`${detected.length} ingredient${detected.length > 1 ? "s" : ""} detected!`, detected.slice(0, 3).join(", ") + (detected.length > 3 ? "..." : ""));
+      }
       setIngredients((current) => [...new Set([...current, ...detected])]);
     } catch (error) {
       console.error("Ingredient detection failed", error);
+      toast.error("Vision scan failed", "Could not connect to the AI backend.");
     } finally {
       setLoadingRecipe(false);
     }
@@ -168,25 +209,59 @@ export default function Recipe() {
         ingredients: ingredients.filter((item) => item.trim()),
       });
       setRecipe(response.data);
+      toast.success("Recipe generated!", "Scroll down to view your custom recipe.");
     } catch (error) {
       console.error("Recipe generation failed", error);
+      toast.error("Recipe failed", "Could not reach the AI backend. Is it running?");
     } finally {
       setLoadingRecipe(false);
     }
   };
 
+  const saveToFavorites = () => {
+    if (!formattedRecipe) return;
+    const updated = [{ name: formattedRecipe.name, savedAt: new Date().toISOString() }, ...favorites].slice(0, 20);
+    setFavorites(updated);
+    localStorage.setItem("yogai_favorites", JSON.stringify(updated));
+    toast.success("Saved to favorites!", formattedRecipe.name);
+  };
+
   const sendChat = async () => {
-    if (!chatMessage.trim()) return;
+    const text = chatMessage.trim();
+    if (!text) return;
+
+    const userMsg = { role: "user", content: text, timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) };
+    setChatMessages((prev) => [...prev, userMsg]);
+    setChatMessage("");
     setLoadingChat(true);
 
+    let contextStr = "";
+    if (user) {
+      let bmiClass = "Unknown";
+      let bmiVal = "Unknown";
+      if (user.height && user.weight) {
+        const hMeters = Number(user.height) / 100;
+        const calcBmi = (Number(user.weight) / (hMeters * hMeters)).toFixed(1);
+        bmiVal = calcBmi;
+        if (calcBmi < 18.5) bmiClass = "Underweight";
+        else if (calcBmi >= 25) bmiClass = "Overweight";
+        else bmiClass = "Normal weight";
+      }
+
+      contextStr = `User Profile - Name: ${user.name}, Age: ${user.age || "Unknown"}, Gender: ${user.gender || "Unknown"}. ` +
+                   `Biometrics: BMI ${bmiVal} (${bmiClass}). Goals: ${user.goals?.join(", ")}. ` +
+                   `Diet: ${user.diet || "None"}. Allergies: ${user.allergies || "None"}. ` +
+                   `Performance: ${stats.calories} kcal burned, ${stats.focus}% neural focus, ${stats.accuracy}% yoga accuracy, ${stats.hydration}L hydration.`;
+    }
+
     try {
-      const response = await api.post("/chat", {
-        message: chatMessage,
-      });
-      setChatReply(response.data.reply || "");
+      const response = await api.post("/chat", { message: text, context: contextStr });
+      const reply = response.data.reply || "No response from assistant.";
+      setChatMessages((prev) => [...prev, { role: "assistant", content: reply, timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) }]);
     } catch (error) {
       console.error("Chat request failed", error);
-      setChatReply("AI chat placeholder connected. Replace with your backend response.");
+      setChatMessages((prev) => [...prev, { role: "assistant", content: "Sorry, I couldn't connect to the AI backend right now. Make sure the server is running.", timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) }]);
+      toast.error("Chat failed", "Backend appears to be offline.");
     } finally {
       setLoadingChat(false);
     }
@@ -236,8 +311,14 @@ export default function Recipe() {
                 icon={History}
                 label="View History"
                 sublabel="Recent meals"
+                onClick={() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" })}
               />
-              <ActionButton icon={Heart} label="Favorites" sublabel="Saved ideas" />
+              <ActionButton
+                icon={Heart}
+                label="Favorites"
+                sublabel="Saved ideas"
+                onClick={() => setFavoritesOpen((o) => !o)}
+              />
             </div>
           </div>
         </Card>
@@ -321,33 +402,26 @@ export default function Recipe() {
                 <Bot size={20} className="text-primary-200" />
                 <h2 className="text-2xl font-semibold text-white">AI Chat</h2>
               </div>
-              <p className="mt-3 text-sm text-slate-400">
-                Placeholder wired to <code>POST /api/chat</code>.
-              </p>
 
-              <div className="mt-6 flex gap-3">
+              {/* Chat history */}
+              <div className="mt-5 max-h-72 overflow-y-auto space-y-1 pr-1">
+                <ChatHistory messages={chatMessages} isLoading={loadingChat} />
+                <div ref={chatEndRef} />
+              </div>
+
+              {/* Input row */}
+              <div className="mt-4 flex gap-3">
                 <input
                   value={chatMessage}
                   onChange={(event) => setChatMessage(event.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendChat()}
                   placeholder="Ask for meal prep ideas, substitutions, or macros..."
                   className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-white/6 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-400"
                 />
-                <Button onClick={sendChat} disabled={loadingChat}>
+                <Button onClick={sendChat} disabled={loadingChat || !chatMessage.trim()}>
                   <Send size={16} />
                   Send
                 </Button>
-              </div>
-
-              <div className="mt-5 rounded-2xl border border-white/8 bg-white/5 p-4">
-                <p className="text-xs uppercase tracking-[0.22em] text-slate-400">
-                  Assistant Reply
-                </p>
-                <p className="mt-3 text-sm leading-6 text-slate-200">
-                  {loadingChat
-                    ? "Thinking..."
-                    : chatReply ||
-                      "Your AI kitchen assistant will surface recipe ideas, substitutions, and flavor pairings here."}
-                </p>
               </div>
             </Card>
           </FadeIn>
@@ -471,14 +545,48 @@ export default function Recipe() {
 
           <FadeIn delay={0.18}>
             <Card glow="amber">
-              <MetricBox
-                label="API Placeholders"
-                value="Recipe + Chat Ready"
-                delta="POST /api/recipe and POST /api/chat are connected in the UI layer."
-                icon={Bot}
-                tone="amber"
-                className="min-h-0"
-              />
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Heart size={18} className="text-amber-400" />
+                  <h2 className="text-xl font-semibold text-white">Saved Favorites</h2>
+                </div>
+                {recipe && (
+                  <button
+                    type="button"
+                    onClick={saveToFavorites}
+                    className="flex items-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-400 hover:bg-amber-500/20 transition"
+                  >
+                    <Heart size={12} /> Save current
+                  </button>
+                )}
+              </div>
+              <div className="mt-4 space-y-2">
+                {favorites.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-white/10 bg-white/4 px-5 py-8 text-center">
+                    <p className="text-sm text-slate-400">No favorites yet. Generate a recipe and save it!</p>
+                  </div>
+                ) : (
+                  favorites.map((fav, i) => (
+                    <div key={i} className="flex items-center justify-between rounded-2xl border border-white/8 bg-white/5 px-4 py-3">
+                      <div>
+                        <p className="text-sm font-semibold text-white truncate max-w-[180px]">{fav.name}</p>
+                        <p className="text-xs text-slate-500">{new Date(fav.savedAt).toLocaleDateString()}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = favorites.filter((_, idx) => idx !== i);
+                          setFavorites(updated);
+                          localStorage.setItem("yogai_favorites", JSON.stringify(updated));
+                        }}
+                        className="text-slate-500 hover:text-rose-400 transition"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
             </Card>
           </FadeIn>
 

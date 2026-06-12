@@ -14,6 +14,10 @@ import {
 import api from "../services/api";
 import { motion } from "framer-motion";
 import { Button, Card, FadeIn, MetricBox, ProgressPill, cn } from "../components/ui";
+import { useSearch } from "../components/MainLayout";
+import { useAuth } from "../context/AuthContext";
+import { useStats } from "../context/StatsContext";
+import { useNavigate } from "react-router-dom";
 
 const features = [
   {
@@ -63,45 +67,23 @@ const weeklyInsights = [
   { label: "Goal alignment", value: "On track" },
 ];
 
-export default function Dashboard({ searchQuery = "" }) {
+export default function Dashboard() {
+  const searchQuery = useSearch();
+  const { user } = useAuth();
+  const { stats } = useStats();
+  const navigate = useNavigate();
+  const firstName = user?.name ? user.name.split(" ")[0] : "Yogi";
+
   const [status, setStatus] = useState("checking");
-  const [lastUpdated, setLastUpdated] = useState(0);
-  const [stats, setStats] = useState({
-    streak: 18,
-    activeMinutes: 64,
-    goalAccuracy: "96%",
-    calories: "1,284 kcal",
-    focus: "88%",
-    hydration: "2.8L",
-    recovery: "91",
-    weeklyPerformance: 84,
-  });
 
   const hour = new Date().getHours();
-  const greeting = hour < 12 ? "Good morning, Siddharth" : hour < 17 ? "Good afternoon, Siddharth" : "Good evening, Siddharth";
+  const greeting = hour < 12 ? `Good morning, ${firstName}` : hour < 17 ? `Good afternoon, ${firstName}` : `Good evening, ${firstName}`;
 
   useEffect(() => {
-    const idleSim = setInterval(() => {
-      setLastUpdated((prev) => prev + 2);
-      if (Math.random() > 0.6) {
-        setStats((prev) => {
-          const calNum = parseInt(prev.calories.replace(/\D/g, "")) + Math.floor(Math.random() * 3);
-          const focusNum = Math.min(99, parseInt(prev.focus) + (Math.random() > 0.5 ? 1 : -1));
-          return {
-            ...prev,
-            calories: `${calNum.toLocaleString()} kcal`,
-            focus: `${focusNum}%`,
-          };
-        });
-      }
-    }, 2000);
-
     api
       .get("/status")
       .then(() => setStatus("online"))
       .catch(() => setStatus("offline"));
-
-    return () => clearInterval(idleSim);
   }, []);
 
   const query = searchQuery.trim().toLowerCase();
@@ -223,7 +205,7 @@ export default function Dashboard({ searchQuery = "" }) {
                 ) : null}
 
                 <div className="mt-8 space-y-6">
-                  <Button>Start Today’s Session</Button>
+                  <Button onClick={() => navigate("/yoga")}>Start Today's Session</Button>
                   
                   <div className="relative overflow-hidden rounded-2xl border border-indigo-500/20 bg-indigo-500/10 p-5 backdrop-blur-md">
                     <motion.div
@@ -236,9 +218,9 @@ export default function Dashboard({ searchQuery = "" }) {
                         <Sparkles className="text-indigo-400" size={18} />
                         <h3 className="text-sm font-semibold text-white">AI Insight</h3>
                       </div>
-                      <span className="text-[10px] uppercase tracking-[0.2em] text-indigo-300/70 font-mono">
-                        Updated {lastUpdated}s ago
-                      </span>
+                      <div className="text-[3.5rem] font-black tracking-tighter text-white drop-shadow-[0_2px_10px_rgba(255,255,255,0.2)]">
+                      {stats.focus}<span className="text-2xl text-slate-400">%</span>
+                    </div>
                     </div>
                     <p className="relative z-10 mt-2 text-sm text-slate-300 flex items-center flex-wrap gap-1">
                       <span>You're slightly under-hydrated today. Drink 700ml in next 2 hours.</span>

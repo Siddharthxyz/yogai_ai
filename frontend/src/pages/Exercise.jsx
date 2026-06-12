@@ -13,6 +13,8 @@ import {
 import api from "../services/api";
 import Webcam from "react-webcam";
 import { Button, Card, FadeIn, MetricBox } from "../components/ui";
+import { useToast } from "../components/Toast";
+import FeedBackCard from "../components/FeedBackCard";
 
 const workouts = [
   { type: "bicep_curl", label: "Bicep Curl", icon: Dumbbell },
@@ -27,6 +29,7 @@ export default function Exercise() {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
   const pollingRef = useRef(null);
+  const toast = useToast();
 
   useEffect(() => {
     if (!session?.session_id) return undefined;
@@ -58,8 +61,10 @@ export default function Exercise() {
       });
       setSession(response.data);
       setStatus(response.data);
+      toast.success("Session started!", `${workouts.find(w => w.type === selected)?.label} tracking is live.`);
     } catch (error) {
       console.error("Exercise session failed", error);
+      toast.error("Session failed", "Could not start the exercise tracker. Is the backend running?");
     } finally {
       setLoading(false);
     }
@@ -69,6 +74,7 @@ export default function Exercise() {
     if (!session?.session_id) return;
     try {
       await api.post(`/exercise/stop/${session.session_id}`);
+      toast.info("Session ended", `You completed ${status?.reps ?? 0} reps in ${status?.duration ?? 0}s.`);
     } catch (error) {
       console.error("Stop session failed", error);
     } finally {
@@ -142,6 +148,19 @@ export default function Exercise() {
                    </div>
                 )}
               </div>
+
+              {/* FeedBackCard for form analysis */}
+              {session && status && (
+                <div className="mt-4">
+                  <FeedBackCard
+                    type={status.form_message?.includes("Correct") ? "success" : "warning"}
+                    title={status.form_message || "Waiting for pose..."}
+                    message={`Phase: ${status.feedback || "Idle"} — ${status.reps ?? 0} reps completed`}
+                    score={status.progress ?? 0}
+                    label="FORM ANALYSIS"
+                  />
+                </div>
+              )}
             </div>
           </Card>
         </FadeIn>

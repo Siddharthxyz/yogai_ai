@@ -174,8 +174,17 @@ class LiveExerciseTracker:
                     
                     self.angles = {"hip": round(hip_angle, 1), "knee": round(knee_angle, 1)}
 
-                    self.correct_form = 1 # Simplified for now
-                    self.form_msg = "Deadlift Tracking"
+                    # Deadlift form: spine should be neutral — check knee not over-bent
+                    # knee_angle > 100 when hinging = reasonable hinge, < 80 = squatting (bad form)
+                    if knee_angle > 100 or hip_angle > 140:
+                        self.correct_form = 1
+                        self.form_msg = "Form is Correct"
+                    elif knee_angle < 80:
+                        self.correct_form = 0
+                        self.form_msg = "Don't squat — hinge at the hips"
+                    else:
+                        self.correct_form = 1
+                        self.form_msg = "Keep back neutral"
 
                     if self.correct_form == 1:
                         if progress_percentage >= 95: # Bent over

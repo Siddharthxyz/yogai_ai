@@ -11,6 +11,8 @@ import {
 } from "lucide-react";
 import yogaAPI from "../services/yogaService";
 import { Button, Card, FadeIn, MetricBox, cn } from "../components/ui";
+import { useToast } from "../components/Toast";
+import FeedBackCard from "../components/FeedBackCard";
 
 export default function Yoga() {
   const [sessions, setSessions] = useState([]);
@@ -19,6 +21,7 @@ export default function Yoga() {
   const [result, setResult] = useState(null);
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef(null);
+  const toast = useToast();
 
   useEffect(() => {
     yogaAPI
@@ -49,8 +52,14 @@ export default function Yoga() {
     try {
       const response = await yogaAPI.post("/detect", formData);
       setResult(response.data);
+      const accuracy = response.data?.accuracy ?? 0;
+      toast.success(
+        `Pose detected — ${Math.round(accuracy)}% accuracy`,
+        `Pose: ${response.data?.pose || "Unknown"}. Check your Neural Insights below.`
+      );
     } catch (error) {
       console.error("Pose detection failed", error);
+      toast.error("Pose detection failed", "Make sure the backend is running and try again.");
       setResult(null);
     } finally {
       setUploading(false);
@@ -163,6 +172,19 @@ export default function Yoga() {
               accept="image/*"
               onChange={(event) => handleFile(event.target.files?.[0])}
             />
+
+            {/* Pose result feedback */}
+            {result && !uploading && (
+              <div className="mt-4">
+                <FeedBackCard
+                  type={result.accuracy >= 80 ? "success" : result.accuracy >= 60 ? "warning" : "error"}
+                  title={result.pose ? `Pose: ${result.pose}` : "Pose Detected"}
+                  message={result.feedback || "Check the Neural Insights panel for detailed metrics."}
+                  score={Math.round(result.accuracy ?? insights.stability)}
+                  label="POSE ANALYSIS"
+                />
+              </div>
+            )}
           </Card>
         </FadeIn>
 

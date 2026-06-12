@@ -27,6 +27,7 @@ recipe_service = RecipeService()
 # ─── Request models ───────────────────────────────────────────────────────────
 class ChatMessage(BaseModel):
     message: str
+    context: str = ""
 
 
 class ChatbotQuery(BaseModel):
@@ -47,7 +48,7 @@ async def handle_chat(msg: ChatMessage):
             detail="Request JSON must include a 'message' field."
         )
     intent = detect_intent(msg.message)
-    response = recipe_service.respond(msg.message, intent=intent)
+    response = recipe_service.respond(msg.message, intent=intent, user_context=msg.context)
     return response
 
 

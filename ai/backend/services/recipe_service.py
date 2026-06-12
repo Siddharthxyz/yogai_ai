@@ -194,26 +194,98 @@ class RecipeService:
             return self._fallback_recipe(prompt)
 
     def _fallback_recipe(self, query: str) -> str:
-        lower = query.lower()
-        if "vegetarian" in lower or "veggie" in lower:
+        """
+        Smart fallback engine simulating an LLM when GROQ API key is missing.
+        Parses the injected context to give personalized responses based on the AI Nutrition Matrix.
+        """
+        import re
+        
+        # Extract user message
+        user_msg_match = re.search(r"User:\s*(.*)\nAssistant:", query, re.IGNORECASE)
+        user_msg = user_msg_match.group(1).strip().lower() if user_msg_match else query.lower()
+
+        # Extract context variables
+        name = "there"
+        name_match = re.search(r"Name:\s*([^,]+),", query)
+        if name_match:
+            name = name_match.group(1).strip()
+            
+        bmi_class = "Normal weight"
+        bmi_match = re.search(r"BMI\s+[\d\.]+\s+\(([^)]+)\)", query)
+        if bmi_match:
+            bmi_class = bmi_match.group(1).strip()
+            
+        accuracy = 90
+        acc_match = re.search(r"(\d+)%\s*yoga accuracy", query)
+        if acc_match:
+            accuracy = int(acc_match.group(1))
+
+        # 1. Greeting / Conversational / Underspecified prompts
+        conversational_words = ["hi", "hello", "hey", "ok", "okay", "start", "help", "", "thanks", "thank you", "thx", "awesome", "great", "cool"]
+        if user_msg in conversational_words or user_msg.strip("!?.") in conversational_words:
             return (
-                "Vegetable Stir-Fry\n- 2 cups mixed vegetables\n- 2 tbsp soy sauce\n"
-                "- Rice\n\nSteps:\n1. Heat oil\n2. Add vegetables\n"
-                "3. Stir-fry 5 mins\n4. Add soy sauce\n5. Serve with rice"
+                f"Hello {name}! I see you are currently in the **{bmi_class}** category, and your Yoga Accuracy is **{accuracy}%**.\n\n"
+                f"Whenever you're ready, list the ingredients you have in your kitchen, or ask for a diet recommendation, and I will generate a custom recipe based on your unique fitness data!"
             )
-        elif "chicken" in lower:
+            
+        # 2. Diet / Recommendation intent
+        if "diet" in user_msg or "recommend" in user_msg or "macros" in user_msg or "protein" in user_msg:
+            # BMI Logic
+            if "Underweight" in bmi_class:
+                recommendation = "a calorie surplus meal with protein-rich foods and healthy fats to help you build mass."
+            elif "Overweight" in bmi_class:
+                recommendation = "a calorie deficit meal with high protein, low sugar, and high fiber to support weight management."
+            else:
+                recommendation = "a balanced nutrition profile with complex carbs and seasonal vegetables to maintain your physique."
+            
+            # Accuracy Logic
+            if accuracy > 90:
+                acc_rec = "Since your Yoga Accuracy is high (>90%), I also recommend performance enhancement and muscle recovery foods."
+            elif accuracy >= 70:
+                acc_rec = "Your Yoga Accuracy is solid (70-90%), so let's focus on balanced energy and hydration foods."
+            else:
+                acc_rec = "To help improve your Yoga Accuracy (<70%), let's stick to energy-supporting, micronutrient-rich beginner meals."
+
             return (
-                "Grilled Chicken\n- Chicken breast\n- Salt, pepper\n- Lemon juice\n\n"
-                "Steps:\n1. Season chicken\n2. Grill 15 mins per side\n"
-                "3. Rest 5 mins\n4. Serve with lemon"
+                f"Based on your profile ({bmi_class}), I recommend {recommendation} {acc_rec}\n\n"
+                f"Tell me what ingredients you have, and I'll generate a custom recipe that fits these exact rules!"
             )
-        elif "pasta" in lower:
-            return (
-                "Simple Pasta\n- Pasta\n- Tomato sauce\n- Garlic\n\n"
-                "Steps:\n1. Boil pasta\n2. Heat tomato sauce\n"
-                "3. Combine\n4. Top with garlic"
-            )
-        return "Create a balanced meal using:\nProtein, Vegetables, Carbs, Healthy Fat.\nSeason to taste!"
+            
+        # 3. Ingredient-based Recipe Generation (Catch-all for any food items)
+        ingredients_list = user_msg.title()
+        
+        # Build explanation string
+        explanation = ""
+        if "Underweight" in bmi_class:
+            explanation = "I designed this recipe to be calorie-dense and rich in healthy fats to support healthy weight gain (BMI < 18.5)."
+        elif "Overweight" in bmi_class:
+            explanation = "I kept this recipe low-sugar and high-fiber to support a calorie deficit for weight management (BMI >= 25)."
+        else:
+            explanation = "This is a perfectly balanced meal to maintain your healthy weight."
+            
+        if accuracy > 90:
+            explanation += " I also added extra protein for muscle recovery since your yoga accuracy is excellent!"
+        elif accuracy >= 70:
+            explanation += " I included hydrating elements to keep your energy balanced."
+        else:
+            explanation += " It is packed with micronutrients to support your energy levels for your next yoga session."
+        
+        import random
+        recipe_types = ["Stir-Fry", "Skillet", "Wrap", "Salad", "Medley", "Plate", "Roast"]
+        recipe_type = random.choice(recipe_types)
+
+        return (
+            f"Perfect {name}. Here is a personalized recipe using your ingredients:\n\n"
+            f"**Custom {ingredients_list} {recipe_type}**\n"
+            f"- {ingredients_list}\n"
+            "- Complex carbs\n"
+            "- Healthy fats & Greens\n\n"
+            "**Steps:**\n"
+            "1. Prep your ingredients.\n"
+            "2. Cook gently to preserve nutrients.\n"
+            "3. Serve and enjoy.\n\n"
+            f"**Why this recipe?**\n{explanation}"
+        )
 
     # ── Recipe generation ─────────────────────────────────────────────────────
     def generate_recipe(self, ingredients: List[str]) -> Dict:
@@ -256,14 +328,22 @@ class RecipeService:
         return recipe
 
     # ── Chat respond ──────────────────────────────────────────────────────────
-    def respond(self, message: str, intent: str = None) -> Dict:
+    def respond(self, message: str, intent: str = None, user_context: str = "") -> Dict:
         context = (
-            "User is asking about recipes."
-            if intent == "recipe"
-            else "You are a helpful culinary assistant."
+            "You are a personalized AI wellness and nutrition assistant for YogAI. "
+            "Follow these strict Recommendation Rules based on the user's data:\n"
+            "1. Underweight (BMI < 18.5): Recommend calorie surplus meals, protein-rich foods, and healthy fats.\n"
+            "2. Overweight (BMI >= 25): Recommend calorie deficit meals, high protein, low sugar, and high fiber.\n"
+            "3. Normal BMI: Recommend balanced nutrition (proteins, complex carbs, healthy fats).\n"
+            "4. High Yoga Accuracy (>90%): Recommend performance enhancement and muscle recovery meals.\n"
+            "5. Medium Accuracy (70-90%): Recommend balanced energy and hydration.\n"
+            "6. Low Accuracy (<70%): Recommend energy-supporting and beginner-friendly nutrition.\n"
+            "CRITICAL INSTRUCTION: You MUST explain exactly WHY you are recommending the recipe based on their specific BMI category and Yoga Accuracy.\n"
         )
+        if user_context:
+            context += f"User Context: {user_context} "
         if self.detected_ingredients:
-            context += f" Available ingredients: {', '.join(self.detected_ingredients)}."
+            context += f"Available ingredients: {', '.join(self.detected_ingredients)}."
 
         prompt = f"{context}\nUser: {message}\nAssistant:"
         response = self.query_groq(prompt)
