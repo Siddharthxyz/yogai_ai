@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap');
 
 body {
   margin: 0;
@@ -7,9 +7,18 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #0f172a;
+  background-color: #0B0F19; /* Deeper premium dark mode */
   color: #f8fafc;
   overflow-x: hidden;
+}
+
+h1, h2, h3, h4, h5, h6, .section-label {
+  font-family: 'Outfit', sans-serif;
+}
+
+input, textarea {
+  color: #ffffff !important; /* Force white text to fix invisibility */
+  font-family: 'Inter', sans-serif;
 }
 
 code {
@@ -23,11 +32,11 @@ code {
 }
 
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0f172a;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {

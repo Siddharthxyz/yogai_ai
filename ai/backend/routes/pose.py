@@ -1,9 +1,11 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 import cv2
 import numpy as np
+import os
+import tempfile
 
 from services.pose_module import PoseDetectorModified
-from services.yoga_service import LiveYogaTracker, live_yoga_sessions
+from services.yoga_service import LiveYogaTracker, live_yoga_sessions, process_yoga_video
 from services.recipe_service import RecipeService
 from pydantic import BaseModel
 
@@ -85,6 +87,32 @@ def recommend_yoga(req: YogaRecommendRequest):
     )
     result = rs.query_groq(prompt)
     return {"recommendation": result}
+
+@pose_bp.post("/yoga/upload_video")
+async def upload_yoga_video(pose_type: str = Form(...), video: UploadFile = File(...)):
+    if not video.filename:
+        raise HTTPException(status_code=400, detail="A video file must be provided.")
+        
+    try:
+        # Create a temporary file to save the uploaded video
+        fd, temp_path = tempfile.mkstemp(suffix=".mp4")
+        with os.fdopen(fd, 'wb') as f:
+            content = await video.read()
+            f.write(content)
+            
+        # Process the video offline
+        result = process_yoga_video(temp_path, pose_type)
+        
+        # Cleanup
+        os.remove(temp_path)
+        
+        if "error" in result:
+            raise HTTPException(status_code=500, detail=result["error"])
+            
+        return result
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @pose_bp.get("/yoga")
 def yoga_sessions():

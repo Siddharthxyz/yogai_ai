@@ -4,15 +4,15 @@ const StatsContext = createContext(null);
 
 export function StatsProvider({ children }) {
   const [stats, setStats] = useState({
-    calories: 1284,
-    focus: 85,
-    accuracy: 96,
-    hydration: 2.1,
-    streak: 14,
-    activeMinutes: 128,
-    goalAccuracy: 94,
-    recovery: 88,
-    weeklyPerformance: 92,
+    calories: 0,
+    focus: 0,
+    accuracy: 0,
+    hydration: 0,
+    streak: 0,
+    activeMinutes: 0,
+    goalAccuracy: 0,
+    recovery: 100,
+    weeklyPerformance: 0,
   });
 
   // Global "Wearable" Simulation

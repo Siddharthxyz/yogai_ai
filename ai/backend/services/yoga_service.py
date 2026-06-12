@@ -211,3 +211,57 @@ class LiveYogaTracker:
 
 # Global dictionary to hold active sessions
 live_yoga_sessions: Dict[str, LiveYogaTracker] = {}
+
+def process_yoga_video(filepath: str, pose_type: str) -> dict:
+    """
+    Process a pre-recorded yoga video frame-by-frame and calculate total hold time.
+    """
+    cap = cv2.VideoCapture(filepath)
+    if not cap.isOpened():
+        return {"error": "Failed to open video file"}
+
+    # We can reuse the LiveYogaTracker's analysis logic by instantiating it temporarily
+    tracker = LiveYogaTracker(pose_type=pose_type, source="video")
+    tracker.is_running = True
+    
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if fps <= 0: fps = 30
+    
+    frames_processed = 0
+    
+    try:
+        while True:
+            success, img = cap.read()
+            if not success:
+                break
+                
+            frames_processed += 1
+            
+            # Subsample for speed if video is long (e.g. process 10 fps instead of 30)
+            if frames_processed % max(1, int(fps/10)) != 0:
+                continue
+
+            img = tracker.detector.findPose(img, draw=False)
+            lmList = tracker.detector.findPosition(img, draw=False)
+
+            if len(lmList) > 0:
+                # We need to simulate the time delta since `tracker.hold_time` uses real `time.time()`
+                # We will manually calculate hold time based on frames
+                tracker._analyze_pose(img, lmList)
+                # Note: `_analyze_pose` updates `tracker.progress` and sets `tracker.feedback`
+                # If progress == 100, we add a fraction of a second to hold time
+                if tracker.progress == 100:
+                    tracker.hold_time += (1.0 / 10.0) # Assuming we are processing at ~10 fps
+            else:
+                tracker.progress = 0
+    except Exception as e:
+        logger.error(f"Error processing video: {e}")
+    finally:
+        cap.release()
+
+    return {
+        "pose_type": pose_type,
+        "hold_time": round(tracker.hold_time, 1),
+        "feedback": f"Video analysis complete. You held perfect {pose_type} form for {round(tracker.hold_time, 1)} seconds."
+    }
