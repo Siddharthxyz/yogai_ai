@@ -29,6 +29,7 @@ const poses = [
 
 export default function Yoga() {
   const [selected, setSelected] = useState(null);
+  const [customPoseName, setCustomPoseName] = useState(null);
   const [session, setSession] = useState(null);
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -158,7 +159,33 @@ export default function Yoga() {
         target_pose: selected || "",
         previous_recommendation: aiRecommendation || ""
       });
-      setAiRecommendation(res.data.recommendation);
+      const recText = res.data.recommendation;
+      setAiRecommendation(recText);
+      
+      const recLower = recText.toLowerCase();
+      const imgMap = {
+        tree: "Tree Pose",
+        warrior: "Warrior II",
+        dog: "Downward Dog",
+        mountain: "Mountain Pose",
+        cobra: "Cobra Pose",
+        plank: "Plank Pose"
+      };
+      const match = Object.keys(imgMap).find(k => 
+        recLower.includes(k) || 
+        (k === 'warrior' && recLower.includes('warrior')) || 
+        (k === 'dog' && recLower.includes('downward dog'))
+      );
+      if (match) {
+        if (!selected) {
+          const poseTypeKey = match === 'dog' ? 'downward_dog' : match;
+          setSelected(poseTypeKey);
+        }
+        setCustomPoseName(null);
+      } else {
+        setSelected(null);
+        setCustomPoseName(true);
+      }
     } catch (error) {
       toast.error("AI Error", "Failed to fetch recommendation.");
     } finally {
@@ -185,37 +212,41 @@ export default function Yoga() {
                 <Wand2 size={16} />
                 {recommending ? "Thinking..." : "AI Recommend"}
               </Button>
-              <div className="flex bg-white/5 rounded-lg p-1 ml-2">
-                 <button 
-                   onClick={() => { setUploadMode(false); setStatus(null); setVideoFile(null); }}
-                   className={`px-3 py-1.5 text-sm font-medium rounded-md transition ${!uploadMode ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white'}`}
-                 >
-                   <Camera size={14} className="inline mr-2"/>Live
-                 </button>
-                 <button 
-                   onClick={() => { setUploadMode(true); setStatus(null); }}
-                   className={`px-3 py-1.5 text-sm font-medium rounded-md transition ${uploadMode ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white'}`}
-                 >
-                   <UploadCloud size={14} className="inline mr-2"/>Upload
-                 </button>
-              </div>
-              {!uploadMode ? (
+              {!customPoseName && (
                 <>
-                  <Button onClick={startSession} disabled={loading || session || !selected}>
-                    <Play size={16} />
-                    Start Pose
-                  </Button>
-                  {session && (
-                    <Button variant="secondary" onClick={stopSession} className="border-rose-500/50 text-rose-400 hover:bg-rose-500/10">
-                      Stop Session
+                  <div className="flex bg-white/5 rounded-lg p-1 ml-2">
+                     <button 
+                       onClick={() => { setUploadMode(false); setStatus(null); setVideoFile(null); }}
+                       className={`px-3 py-1.5 text-sm font-medium rounded-md transition ${!uploadMode ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white'}`}
+                     >
+                       <Camera size={14} className="inline mr-2"/>Live
+                     </button>
+                     <button 
+                       onClick={() => { setUploadMode(true); setStatus(null); }}
+                       className={`px-3 py-1.5 text-sm font-medium rounded-md transition ${uploadMode ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white'}`}
+                     >
+                       <UploadCloud size={14} className="inline mr-2"/>Upload
+                     </button>
+                  </div>
+                  {!uploadMode ? (
+                    <>
+                      <Button onClick={startSession} disabled={loading || session || !selected}>
+                        <Play size={16} />
+                        Start Pose
+                      </Button>
+                      {session && (
+                        <Button variant="secondary" onClick={stopSession} className="border-rose-500/50 text-rose-400 hover:bg-rose-500/10">
+                          Stop Session
+                        </Button>
+                      )}
+                    </>
+                  ) : (
+                    <Button onClick={submitVideo} disabled={uploading || !videoFile}>
+                      <UploadCloud size={16} />
+                      {uploading ? "Analyzing..." : "Analyze Video"}
                     </Button>
                   )}
                 </>
-              ) : (
-                <Button onClick={submitVideo} disabled={uploading || !videoFile}>
-                  <UploadCloud size={16} />
-                  {uploading ? "Analyzing..." : "Analyze Video"}
-                </Button>
               )}
             </div>
           </div>
@@ -276,7 +307,12 @@ export default function Yoga() {
               return (
                 <button
                   key={p.type}
-                  onClick={() => !session && setSelected(prev => prev === p.type ? null : p.type)}
+                  onClick={() => {
+                    if (!session) {
+                      setSelected(prev => prev === p.type ? null : p.type);
+                      setCustomPoseName(null);
+                    }
+                  }}
                   className={`flex shrink-0 items-center gap-2 rounded-2xl border px-5 py-3 text-sm font-medium transition ${
                     active
                       ? "border-primary-400/50 bg-primary-400/20 text-primary-200"

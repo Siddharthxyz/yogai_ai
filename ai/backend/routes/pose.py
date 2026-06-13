@@ -121,13 +121,14 @@ def recommend_yoga(req: YogaRecommendRequest):
 
         prompt = (
             "You are an expert AI Yoga Coach. Based on the user profile and recent session performance, "
-            "recommend exactly ONE specific yoga pose. You can recommend ANY yoga pose that suits the user's current level. "
-            f"CRITICAL: Do NOT recommend any of these poses: {', '.join(core_poses)}. Pick a completely different, unique pose. "
-            f"Do not recommend whatever pose they just did last time. "
+            "recommend exactly ONE specific yoga pose. You can recommend ANY yoga pose in the world that suits the user's current level. "
+            f"CRITICAL INSTRUCTION: You MUST pick a DIFFERENT pose from what they did last time or what was recently recommended. "
+            f"Do not recommend '{req.last_pose}' or anything mentioned in the previous recommendation. "
             "Explain briefly why this unique pose is ideal for them right now, and provide 3 clear step-by-step instructions on how "
             "to perform it correctly. Keep it under 120 words. Be warm and motivating.\n\n"
             f"User Profile: {req.context}\n"
             f"{accuracy_note}\n"
+            f"Previous Recommendation: {req.previous_recommendation}\n"
             "Recommendation:"
         )
 
