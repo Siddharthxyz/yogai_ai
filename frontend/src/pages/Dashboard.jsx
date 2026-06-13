@@ -2,25 +2,19 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Activity,
-  BrainCircuit,
   ChefHat,
   Dumbbell,
-  Flame,
-  Sparkles,
   TrendingUp,
   Wind,
   Zap,
   ChevronRight
 } from "lucide-react";
 import api from "../services/api";
-import { motion } from "framer-motion";
-import { Button, Card, FadeIn, cn } from "../components/ui";
-import { useSearch } from "../components/MainLayout";
+import { FadeIn, Button, cn } from "../components/ui";
 import { useAuth } from "../context/AuthContext";
 import { useStats } from "../context/StatsContext";
 
 export default function Dashboard() {
-  const searchQuery = useSearch();
   const { user } = useAuth();
   const { stats } = useStats();
   const navigate = useNavigate();

@@ -9,7 +9,6 @@ export function StatsProvider({ children }) {
     accuracy: 0,
     hydration: 0,
     streak: parseInt(localStorage.getItem("yogai_streak") || "0", 10),
-    activeMinutes: 0,
     goalAccuracy: 0,
     recovery: 100,
     weeklyPerformance: 0,

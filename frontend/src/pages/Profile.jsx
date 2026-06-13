@@ -26,12 +26,7 @@ const GOALS = [
   "Cardio Fitness",
 ];
 
-const STATS = [
-  { label: "Sessions this week", value: "4" },
-  { label: "Calories logged",    value: "3,821 kcal" },
-  { label: "Yoga streak",        value: "7 days" },
-  { label: "Recipes generated",  value: "12" },
-];
+
 
 export default function Profile() {
   const { user, updateProfile, logout } = useAuth();

@@ -44,72 +44,74 @@ COCO_FOOD_CLASSES = {
 }
 
 
+import base64
+
 class IngredientDetector:
     """
-    Detects food ingredients from an image using YOLOv8.
+    Detects food ingredients from an image using Groq Vision API.
     """
 
-    _model = None
-
-    def __init__(self, model_path: str = "yolov8n.pt", conf_threshold: float = 0.25):
-        self.conf_threshold = conf_threshold
-        import os
-        target_model = os.path.join(os.path.dirname(__file__), "..", model_path)
-        if not os.path.exists(target_model):
-            target_model = model_path
-            
-        self.model_path = os.getenv("YOLO_MODEL_PATH", target_model)
-
-    def _get_model(self):
-        if IngredientDetector._model is None and HAS_YOLO:
-            try:
-                IngredientDetector._model = YOLO(self.model_path)
-                logger.info("YOLO model loaded: %s", self.model_path)
-            except Exception as e:
-                logger.error("Failed to load YOLO model: %s", e)
-        return IngredientDetector._model
+    def __init__(self):
+        self.groq_api_key = os.getenv("GROQ_API_KEY")
+        self.groq_url = "https://api.groq.com/openai/v1/chat/completions"
+        self.model = "meta-llama/llama-4-scout-17b-16e-instruct"
 
     def detect_from_bytes(self, image_bytes: bytes) -> Dict:
-        if not HAS_YOLO:
-            return self._fallback_detection()
-
-        model = self._get_model()
-        if model is None:
+        if not self.groq_api_key:
             return self._fallback_detection()
 
         try:
-            image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-            results = model.predict(source=image, conf=self.conf_threshold, verbose=False)
+            base64_image = base64.b64encode(image_bytes).decode('utf-8')
             
-            ingredient_counts = {}
-            detections = []
+            headers = {
+                "Authorization": f"Bearer {self.groq_api_key}",
+                "Content-Type": "application/json",
+            }
             
-            if len(results) > 0:
-                result = results[0]
-                for box in result.boxes:
-                    label_index = int(box.cls)
-                    label_name = model.names[label_index]
-                    
-                    # Fix for YOLO confusing tomatoes with apples (COCO dataset lacks a tomato class)
-                    if label_name == "apple":
-                        label_name = "tomato"
-                        
-                    confidence = round(float(box.conf), 2)
-                    ingredient_counts[label_name] = ingredient_counts.get(label_name, 0) + 1
-                    detections.append({"name": label_name, "confidence": confidence})
+            payload = {
+                "model": self.model,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "Identify only the food ingredients visible in this image. Do not include plates, bowls, utensils, or backgrounds. Reply with ONLY a simple comma-separated list of the ingredient names in singular form, in all lowercase. If no food is found, reply with 'none'."},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{base64_image}"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "temperature": 0.2,
+                "max_tokens": 100
+            }
 
-            ingredients = list(ingredient_counts.keys())
-            logger.info("YOLO detected ingredients: %s", ingredients)
+            response = requests.post(self.groq_url, json=payload, headers=headers, timeout=20)
+            
+            if response.status_code != 200:
+                logger.error("Groq Vision API Error: %s", response.text)
+                return self._fallback_detection()
+                
+            content = response.json()["choices"][0]["message"]["content"].strip().lower()
+            
+            if content == "none" or not content:
+                ingredients = []
+            else:
+                ingredients = [i.strip() for i in content.split(",") if i.strip()]
+                
+            logger.info("Groq Vision detected ingredients: %s", ingredients)
 
             return {
                 "ingredients": ingredients,
-                "counts": ingredient_counts,
-                "detections": detections,
-                "source": "yolo",
+                "counts": {i: 1 for i in ingredients},
+                "detections": [{"name": i, "confidence": 0.99} for i in ingredients],
+                "source": "groq_vision",
             }
 
         except Exception as e:
-            logger.error("YOLO inference error: %s", e)
+            logger.error("Groq Vision inference error: %s", e)
             return self._fallback_detection()
 
     @staticmethod
@@ -118,7 +120,7 @@ class IngredientDetector:
             "ingredients": [],
             "detections": [],
             "source": "fallback",
-            "warning": "YOLO model not available. Install ultralytics and Pillow.",
+            "warning": "Groq Vision model not available or failed.",
         }
 
 
