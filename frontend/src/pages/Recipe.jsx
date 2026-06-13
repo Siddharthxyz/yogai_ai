@@ -19,6 +19,39 @@ import { useToast } from "../components/Toast";
 import { useAuth } from "../context/AuthContext";
 import { useStats } from "../context/StatsContext";
 
+// Separate uncontrolled input component so it never loses focus on parent re-renders
+function AddIngredientRow({ onAdd }) {
+  const [value, setValue] = useState("");
+
+  const commit = () => {
+    const trimmed = value.trim();
+    if (trimmed) {
+      onAdd(trimmed);
+      setValue("");
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } }}
+        onBlur={commit}
+        placeholder="Type and press Enter to add..."
+        className="w-full rounded-2xl border border-dashed border-white/15 bg-white/3 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500 focus:border-primary-500/50 focus:bg-white/6 transition"
+      />
+      <button
+        type="button"
+        onClick={commit}
+        className="shrink-0 rounded-2xl border border-white/10 bg-white/6 p-3 text-slate-300 transition hover:bg-primary-500/20 hover:text-primary-300"
+      >
+        <Plus size={14} />
+      </button>
+    </div>
+  );
+}
+
 function normalizeRecipe(recipe) {
   if (!recipe) return null;
 
@@ -520,38 +553,33 @@ export default function Recipe() {
                   <p className="section-label">Pantry</p>
                   <h2 className="mt-2 text-2xl font-semibold text-white">Pantry Panel</h2>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setIngredients((current) => [...current, ""])}
-                  className="rounded-2xl border border-white/10 bg-white/6 p-3 text-slate-300 transition hover:bg-white/10 hover:text-white"
-                >
-                  <Plus size={18} />
-                </button>
               </div>
 
               <div className="mt-6 space-y-3">
-                {ingredients.length ? (
-                  ingredients.map((ingredient, index) => (
+                {ingredients.map((ingredient, index) => (
+                  <div key={index} className="flex items-center gap-2">
                     <input
-                      key={`${ingredient}-${index}`}
                       value={ingredient}
                       onChange={(event) => {
                         const next = [...ingredients];
                         next[index] = event.target.value;
                         setIngredients(next);
                       }}
-                      placeholder="Add ingredient"
-                      className="w-full rounded-2xl border border-white/8 bg-white/5 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-400"
+                      placeholder="Ingredient name"
+                      className="w-full rounded-2xl border border-white/8 bg-white/5 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-400 focus:border-primary-500/50 focus:ring-1 focus:ring-primary-500/30 transition"
                     />
-                  ))
-                ) : (
-                  <div className="rounded-[28px] border border-dashed border-white/10 bg-white/4 px-6 py-10 text-center">
-                    <p className="text-lg font-semibold text-white">Pantry is empty</p>
-                    <p className="mt-2 text-sm text-slate-400">
-                      Scan ingredients or add items manually to get started.
-                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setIngredients((prev) => prev.filter((_, i) => i !== index))}
+                      className="shrink-0 rounded-2xl border border-white/8 bg-white/5 p-3 text-slate-400 transition hover:bg-rose-500/20 hover:text-rose-400"
+                    >
+                      <X size={14} />
+                    </button>
                   </div>
-                )}
+                ))}
+
+                {/* Add new ingredient row */}
+                <AddIngredientRow onAdd={(val) => setIngredients((prev) => [...prev, val])} />
               </div>
 
               <Button
