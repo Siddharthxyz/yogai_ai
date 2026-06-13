@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { useStats } from "../context/StatsContext";
 import { useToast } from "../components/Toast";
 import { Button, Card, FadeIn } from "../components/ui";
 
@@ -34,8 +35,16 @@ const STATS = [
 
 export default function Profile() {
   const { user, updateProfile, logout } = useAuth();
+  const { stats } = useStats();
   const toast   = useToast();
   const navigate = useNavigate();
+
+  const dynamicStats = [
+    { label: "Sessions logged",      value: stats?.sessions || 0 },
+    { label: "Calories logged",      value: `${stats?.calories || 0} kcal` },
+    { label: "Yoga streak",          value: `${stats?.streak || 0} days` },
+    { label: "Recipes generated",    value: stats?.recipesGenerated || 0 },
+  ];
 
   const [editing,  setEditing]  = useState(false);
   const [name,      setName]      = useState(user?.name || "");
@@ -270,7 +279,7 @@ export default function Profile() {
               <h2 className="text-2xl font-semibold text-white">Activity Overview</h2>
             </div>
             <div className="mt-6 grid grid-cols-2 gap-4">
-              {STATS.map((s) => (
+              {dynamicStats.map((s) => (
                 <div key={s.label} className="rounded-2xl border border-white/8 bg-white/5 p-5">
                   <p className="text-2xl font-semibold text-white">{s.value}</p>
                   <p className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-400">{s.label}</p>

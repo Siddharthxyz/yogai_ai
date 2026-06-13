@@ -25,6 +25,7 @@ try:
     from ultralytics import YOLO
     from PIL import Image
     import numpy as np
+    import io
     HAS_YOLO = True
     logger.info("ultralytics YOLO available — ingredient detection enabled.")
 except ImportError:
@@ -36,7 +37,6 @@ except ImportError:
     )
 
 # ─── Food/ingredient class names present in COCO-trained YOLOv8 ──────────────
-# These are the food-related classes from COCO-80 that YOLO can detect.
 COCO_FOOD_CLASSES = {
     "banana", "apple", "sandwich", "orange", "broccoli", "carrot",
     "hot dog", "pizza", "donut", "cake", "bottle", "wine glass",
@@ -47,23 +47,20 @@ COCO_FOOD_CLASSES = {
 class IngredientDetector:
     """
     Detects food ingredients from an image using YOLOv8.
-    Uses the general COCO-trained yolov8n.pt model.
-    For better food coverage, replace with a fine-tuned food model.
     """
 
-    _model = None  # shared singleton
+    _model = None
 
-    def __init__(self, model_path: str = "yolo_fruits_and_vegetables_v8x.pt", conf_threshold: float = 0.25):
+    def __init__(self, model_path: str = "yolov8n.pt", conf_threshold: float = 0.25):
         self.conf_threshold = conf_threshold
-        # Check if the specific model exists in the backend directory
+        import os
         target_model = os.path.join(os.path.dirname(__file__), "..", model_path)
         if not os.path.exists(target_model):
-            target_model = model_path # fallback to just the name for ultralytics auto-download if applicable
+            target_model = model_path
             
         self.model_path = os.getenv("YOLO_MODEL_PATH", target_model)
 
     def _get_model(self):
-        """Lazy-load the YOLO model."""
         if IngredientDetector._model is None and HAS_YOLO:
             try:
                 IngredientDetector._model = YOLO(self.model_path)
@@ -73,10 +70,6 @@ class IngredientDetector:
         return IngredientDetector._model
 
     def detect_from_bytes(self, image_bytes: bytes) -> Dict:
-        """
-        Run YOLO inference on raw image bytes.
-        Returns detected ingredient names + counts (matching RecipeMaker-AI style).
-        """
         if not HAS_YOLO:
             return self._fallback_detection()
 
@@ -85,24 +78,23 @@ class IngredientDetector:
             return self._fallback_detection()
 
         try:
-            # RecipeMaker-AI style: Save to temp then predict (or use predict directly on bytes if supported)
-            # For robustness, we'll use PIL Image then predict
             image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-            
-            # Use model.predict as in RecipeMaker-AI
             results = model.predict(source=image, conf=self.conf_threshold, verbose=False)
             
             ingredient_counts = {}
             detections = []
             
-            # The results object contains boxes
             if len(results) > 0:
                 result = results[0]
                 for box in result.boxes:
                     label_index = int(box.cls)
                     label_name = model.names[label_index]
-                    confidence = round(float(box.conf), 2)
                     
+                    # Fix for YOLO confusing tomatoes with apples (COCO dataset lacks a tomato class)
+                    if label_name == "apple":
+                        label_name = "tomato"
+                        
+                    confidence = round(float(box.conf), 2)
                     ingredient_counts[label_name] = ingredient_counts.get(label_name, 0) + 1
                     detections.append({"name": label_name, "confidence": confidence})
 
@@ -121,21 +113,12 @@ class IngredientDetector:
             return self._fallback_detection()
 
     @staticmethod
-    def _is_likely_food(class_name: str) -> bool:
-        food_keywords = ["fruit", "vegetable", "meat", "fish", "bread", "egg",
-                         "cheese", "milk", "tomato", "potato", "onion", "garlic"]
-        return any(kw in class_name for kw in food_keywords)
-
-    @staticmethod
     def _fallback_detection() -> Dict:
         return {
             "ingredients": [],
             "detections": [],
             "source": "fallback",
-            "warning": (
-                "YOLO model not available. "
-                "Install ultralytics and Pillow, or provide a custom YOLO_MODEL_PATH."
-            ),
+            "warning": "YOLO model not available. Install ultralytics and Pillow.",
         }
 
 
@@ -288,19 +271,48 @@ class RecipeService:
         )
 
     # ── Recipe generation ─────────────────────────────────────────────────────
-    def generate_recipe(self, ingredients: List[str]) -> Dict:
+    def generate_recipe(self, ingredients: List[str], user_context: str = "") -> Dict:
         self.detected_ingredients = ingredients
+        context_rules = (
+            "You are a professional chef and personalized AI wellness assistant for YogAI. "
+            "Follow these strict Recommendation Rules based on the user's data:\n"
+            "1. Underweight (BMI < 18.5): Recommend calorie surplus meals, protein-rich foods, and healthy fats.\n"
+            "2. Overweight (BMI >= 25): Recommend calorie deficit meals, high protein, low sugar, and high fiber.\n"
+            "3. Normal BMI: Recommend balanced nutrition (proteins, complex carbs, healthy fats).\n"
+            "4. High Yoga Accuracy (>90%): Recommend performance enhancement and muscle recovery meals.\n"
+            "5. Medium Accuracy (70-90%): Recommend balanced energy and hydration.\n"
+            "6. Low Accuracy (<70%): Recommend energy-supporting and beginner-friendly nutrition.\n"
+        )
+        if user_context:
+            context_rules += f"\nUser Context: {user_context}\n"
+            
         prompt = (
-            f"You are a professional chef. Create a simple recipe using these ingredients:\n"
+            f"{context_rules}\n"
+            f"Create a simple recipe using these ingredients:\n"
             f"{', '.join(ingredients)}\n\n"
             f"Provide:\n1. Recipe Name\n2. Key Ingredients (from the list)\n"
             f"3. Simple Steps (max 6)\n4. Cooking Time estimate\n"
+            f"CRITICAL INSTRUCTION: Include a short paragraph at the end explaining exactly WHY you are recommending this recipe based on their specific BMI category and Yoga Accuracy."
         )
         result = self.query_groq(prompt)
         
         # Parse result into subsections (RecipeMaker-AI style)
         steps = [line.strip() for line in result.split("\n") if line.strip() and (line[0].isdigit() or line.startswith("-"))]
         
+        # Extract the explanation paragraph
+        import re
+        reasoning = ""
+        reasoning_match = re.search(r"(?:Why this recipe\?|CRITICAL INSTRUCTION:?|Here is why|Based on your|Reasoning:)(.*?)$", result, re.IGNORECASE | re.DOTALL)
+        if reasoning_match:
+            reasoning = reasoning_match.group(1).strip()
+            # Clean up the result to not include the reasoning in the main steps if it got caught
+            result = result.replace(reasoning_match.group(0), "").strip()
+        else:
+            # Fallback: just take the last paragraph if it doesn't match steps
+            paragraphs = [p.strip() for p in result.split("\n\n") if p.strip()]
+            if paragraphs and not paragraphs[-1][0].isdigit():
+                reasoning = paragraphs[-1]
+
         recipe = {
             "id": self.next_id,
             "recipeName": (
@@ -310,6 +322,7 @@ class RecipeService:
             "title": f"Recipe for {', '.join(ingredients)}",
             "ingredients": ", ".join(ingredients),
             "description": result,
+            "reasoning": reasoning,
             "subsections": [
                 {
                     "heading": "Ingredients",

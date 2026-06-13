@@ -40,7 +40,7 @@ export default function Yoga() {
   const pollingRef = useRef(null);
   const toast = useToast();
   const { user } = useAuth();
-  const { stats, incrementStreak } = useStats();
+  const { stats, incrementStreak, incrementSessions } = useStats();
 
   useEffect(() => {
     if (!session?.session_id) return undefined;
@@ -90,6 +90,7 @@ export default function Yoga() {
       setLastHoldTime(holdTime);
       toast.info("Session ended", `You held perfect form for ${holdTime} seconds.`);
       incrementStreak(); // Streak increments on validated session
+      incrementSessions();
     } catch (error) {
       console.error("Stop session failed", error);
     } finally {
@@ -129,6 +130,7 @@ export default function Yoga() {
         angles: {}
       });
       incrementStreak(); // Streak increments on successful upload analysis
+      incrementSessions();
       toast.success("Analysis Complete", `You held ${poses.find(p=>p.type === selected)?.label} for ${response.data.hold_time} seconds!`);
     } catch (error) {
       toast.error("Upload Failed", "Could not analyze the video.");
@@ -349,7 +351,7 @@ export default function Yoga() {
           <FeedBackCard
             title="Form Accuracy"
             score={status?.progress ?? 0}
-            message={status?.form_msg ?? "Waiting for camera..."}
+            message={status?.form_msg ?? (uploadMode ? (uploading ? "Analyzing video..." : "Upload a video to analyze") : "Waiting for camera...")}
             subMessage={`Pose: ${poses.find(p=>p.type === selected)?.label}`}
           />
           <Card glow="cyan" className="flex-1">

@@ -38,6 +38,7 @@ function normalizeRecipe(recipe) {
     steps: Array.isArray(recipe.subsections?.find((section) => /instruction|step/i.test(section.heading))?.steps)
       ? recipe.subsections.find((section) => /instruction|step/i.test(section.heading)).steps
       : [],
+    reasoning: recipe.reasoning || "",
   };
 
   if (!rawText) {
@@ -130,7 +131,7 @@ function normalizeRecipe(recipe) {
 
 export default function Recipe() {
   const { user } = useAuth();
-  const { stats } = useStats();
+  const { stats, incrementRecipesGenerated } = useStats();
   const toast = useToast();
   const [image, setImage] = useState(null);
   const [ingredients, setIngredients] = useState([]);
@@ -199,6 +200,28 @@ export default function Recipe() {
     }
   };
 
+  const getContextString = () => {
+    let contextStr = "";
+    if (user) {
+      let bmiClass = "Unknown";
+      let bmiVal = "Unknown";
+      if (user.height && user.weight) {
+        const hMeters = Number(user.height) / 100;
+        const calcBmi = (Number(user.weight) / (hMeters * hMeters)).toFixed(1);
+        bmiVal = calcBmi;
+        if (calcBmi < 18.5) bmiClass = "Underweight";
+        else if (calcBmi >= 25) bmiClass = "Overweight";
+        else bmiClass = "Normal weight";
+      }
+
+      contextStr = `User Profile - Name: ${user.name}, Age: ${user.age || "Unknown"}, Gender: ${user.gender || "Unknown"}. ` +
+                   `Biometrics: BMI ${bmiVal} (${bmiClass}). Goals: ${user.goals?.join(", ")}. ` +
+                   `Diet: ${user.diet || "None"}. Allergies: ${user.allergies || "None"}. ` +
+                   `Performance: ${stats.calories} kcal burned, ${stats.focus}% neural focus, ${stats.accuracy}% yoga accuracy, ${stats.hydration}L hydration.`;
+    }
+    return contextStr;
+  };
+
   const generateRecipe = async () => {
     if (!canGenerate) return;
     setLoadingRecipe(true);
@@ -206,8 +229,10 @@ export default function Recipe() {
     try {
       const response = await recipeAPI.post("/recipe", {
         ingredients: ingredients.filter((item) => item.trim()),
+        context: getContextString()
       });
       setRecipe(response.data);
+      incrementRecipesGenerated();
       toast.success("Recipe generated!", "Scroll down to view your custom recipe.");
     } catch (error) {
       console.error("Recipe generation failed", error);
@@ -234,27 +259,8 @@ export default function Recipe() {
     setChatMessage("");
     setLoadingChat(true);
 
-    let contextStr = "";
-    if (user) {
-      let bmiClass = "Unknown";
-      let bmiVal = "Unknown";
-      if (user.height && user.weight) {
-        const hMeters = Number(user.height) / 100;
-        const calcBmi = (Number(user.weight) / (hMeters * hMeters)).toFixed(1);
-        bmiVal = calcBmi;
-        if (calcBmi < 18.5) bmiClass = "Underweight";
-        else if (calcBmi >= 25) bmiClass = "Overweight";
-        else bmiClass = "Normal weight";
-      }
-
-      contextStr = `User Profile - Name: ${user.name}, Age: ${user.age || "Unknown"}, Gender: ${user.gender || "Unknown"}. ` +
-                   `Biometrics: BMI ${bmiVal} (${bmiClass}). Goals: ${user.goals?.join(", ")}. ` +
-                   `Diet: ${user.diet || "None"}. Allergies: ${user.allergies || "None"}. ` +
-                   `Performance: ${stats.calories} kcal burned, ${stats.focus}% neural focus, ${stats.accuracy}% yoga accuracy, ${stats.hydration}L hydration.`;
-    }
-
     try {
-      const response = await api.post("/chat", { message: text, context: contextStr });
+      const response = await api.post("/chat", { message: text, context: getContextString() });
       const reply = response.data.reply || "No response from assistant.";
       setChatMessages((prev) => [...prev, { role: "assistant", content: reply, timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) }]);
     } catch (error) {
@@ -482,6 +488,23 @@ export default function Recipe() {
                         </li>
                       ))}
                     </ol>
+                  </div>
+                ) : null}
+
+                {formattedRecipe?.reasoning ? (
+                  <div className="mt-8 rounded-[24px] border border-primary-500/30 bg-primary-500/10 p-6 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-4 opacity-10">
+                      <Sparkles size={64} />
+                    </div>
+                    <div className="relative z-10">
+                      <div className="flex items-center gap-2 text-primary-400 mb-3">
+                        <Heart size={20} fill="currentColor" />
+                        <h3 className="font-bold uppercase tracking-wider text-sm">Personalized Diet Profile</h3>
+                      </div>
+                      <p className="text-base leading-relaxed text-slate-200">
+                        {formattedRecipe.reasoning}
+                      </p>
+                    </div>
                   </div>
                 ) : null}
               </Card>

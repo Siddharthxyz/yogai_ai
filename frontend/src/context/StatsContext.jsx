@@ -13,6 +13,8 @@ export function StatsProvider({ children }) {
     goalAccuracy: 0,
     recovery: 100,
     weeklyPerformance: 0,
+    recipesGenerated: parseInt(localStorage.getItem("yogai_recipes_generated") || "0", 10),
+    sessions: parseInt(localStorage.getItem("yogai_sessions") || "0", 10),
   });
 
   const incrementStreak = useCallback(() => {
@@ -35,6 +37,22 @@ export function StatsProvider({ children }) {
       ...prev,
       hydration: Number((prev.hydration + amountInLiters).toFixed(2))
     }));
+  }, []);
+
+  const incrementRecipesGenerated = useCallback(() => {
+    setStats((prev) => {
+      const newCount = prev.recipesGenerated + 1;
+      localStorage.setItem("yogai_recipes_generated", newCount.toString());
+      return { ...prev, recipesGenerated: newCount };
+    });
+  }, []);
+
+  const incrementSessions = useCallback(() => {
+    setStats((prev) => {
+      const newCount = prev.sessions + 1;
+      localStorage.setItem("yogai_sessions", newCount.toString());
+      return { ...prev, sessions: newCount };
+    });
   }, []);
 
   // Global "Wearable" Simulation
@@ -61,7 +79,7 @@ export function StatsProvider({ children }) {
   }, []);
 
   return (
-    <StatsContext.Provider value={{ stats, setStats, incrementStreak, addHydration }}>
+    <StatsContext.Provider value={{ stats, setStats, incrementStreak, addHydration, incrementRecipesGenerated, incrementSessions }}>
       {children}
     </StatsContext.Provider>
   );

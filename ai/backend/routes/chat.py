@@ -36,6 +36,7 @@ class ChatbotQuery(BaseModel):
 
 class RecipeRequest(BaseModel):
     ingredients: List[str]
+    context: str = ""
 
 
 # ─── Original endpoints ───────────────────────────────────────────────────────
@@ -71,7 +72,7 @@ async def generate_recipe(request: RecipeRequest):
     """Generate a recipe from a list of ingredient names (via Groq LLM)."""
     if not request.ingredients:
         raise HTTPException(status_code=400, detail="No ingredients provided.")
-    return recipe_service.generate_recipe(request.ingredients)
+    return recipe_service.generate_recipe(request.ingredients, request.context)
 
 
 @chat_bp.get("/recipes/status")
