@@ -40,13 +40,14 @@ export default function Landing() {
         <div className="flex items-center gap-4">
           <button
             onClick={() => navigate("/login")}
-            className="text-sm font-semibold text-slate-400 hover:text-white transition"
+            className="text-base font-black transition drop-shadow-md hover:scale-105"
+            style={{ color: '#ffffff' }}
           >
             Sign In
           </button>
           <button
             onClick={() => navigate("/login")}
-            className="rounded-xl bg-white px-4 py-2 text-sm font-black text-slate-950 hover:scale-105 transition"
+            className="rounded-xl bg-white px-5 py-2.5 text-base font-black text-gray-900 hover:bg-gray-200 hover:scale-105 transition"
           >
             Get Started
           </button>
@@ -58,10 +59,11 @@ export default function Landing() {
         <motion.div
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
-          className="inline-flex items-center gap-2 px-5 py-2 rounded-full border border-white/10 bg-white/5 backdrop-blur text-primary-400 font-bold text-sm mb-12"
+          className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full border-2 border-white/50 bg-white/20 backdrop-blur font-black text-sm mb-12 shadow-lg"
+          style={{ color: '#ffffff' }}
         >
-          <Sparkles size={16} />
-          <span className="tracking-wide uppercase">AI-Powered Wellness Ecosystem</span>
+          <Sparkles size={18} color="#ffffff" />
+          <span className="tracking-wide uppercase drop-shadow-md">AI-Powered Wellness Ecosystem</span>
         </motion.div>
 
         {/* Hero Title */}
@@ -82,7 +84,8 @@ export default function Landing() {
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ delay: 0.2 }}
-          className="max-w-2xl mx-auto text-xl text-gray-400 leading-relaxed mb-12"
+          className="max-w-2xl mx-auto text-2xl font-bold leading-relaxed mb-12 drop-shadow-md"
+          style={{ color: '#ffffff' }}
         >
           The world's most advanced neural assistant for personal yoga,
           gourmet nutrition, and high-performance exercise tracking.
@@ -105,9 +108,10 @@ export default function Landing() {
 
           <button
             onClick={() => setVideoOpen(true)}
-            className="px-10 py-5 border border-white/10 bg-white/5 backdrop-blur text-white rounded-2xl font-black text-lg hover:bg-white/10 transition-all flex items-center gap-3 group"
+            className="px-10 py-5 border-2 border-white/50 bg-white/20 backdrop-blur rounded-2xl font-black text-lg hover:bg-white/30 transition-all flex items-center gap-3 group"
+            style={{ color: '#ffffff' }}
           >
-            <Play size={18} className="text-primary-400 group-hover:scale-110 transition-transform" />
+            <Play size={20} className="text-white group-hover:scale-110 transition-transform" />
             Watch Vision AI
           </button>
         </motion.div>
@@ -136,12 +140,12 @@ export default function Landing() {
             { icon: ChefHat,  title: "AI Kitchen",       desc: "Scan your pantry, detect ingredients with YOLO, and generate custom recipes." },
             { icon: Dumbbell, title: "Exercise Counter",  desc: "Real-time rep counting for 5 exercises with live form analysis." },
           ].map((card) => (
-            <div key={card.title} className="rounded-3xl border border-white/10 bg-white/5 p-7 backdrop-blur hover:bg-white/8 transition">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-500/15 text-primary-300 mb-5">
-                <card.icon size={22} />
+            <div key={card.title} className="rounded-3xl border-2 border-white/40 bg-white/20 p-7 backdrop-blur hover:bg-white/30 transition shadow-lg">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-500/50 text-white mb-5 shadow-inner">
+                <card.icon size={24} />
               </div>
-              <h3 className="text-lg font-bold text-white">{card.title}</h3>
-              <p className="mt-2 text-sm text-slate-400 leading-relaxed">{card.desc}</p>
+              <h3 className="text-xl font-black" style={{ color: '#ffffff' }}>{card.title}</h3>
+              <p className="mt-3 text-base font-bold leading-relaxed" style={{ color: '#ffffff' }}>{card.desc}</p>
             </div>
           ))}
         </motion.div>
@@ -181,12 +185,12 @@ export default function Landing() {
               </button>
 
               <div className="flex items-center gap-3 mb-6">
-                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary-500/20 text-primary-300">
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary-500/50 text-white shadow-lg">
                   <BrainCircuit size={20} />
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold text-white">Vision AI — How It Works</h3>
-                  <p className="text-xs text-slate-500 uppercase tracking-widest">YogAI Neural Stack</p>
+                  <h3 className="text-xl font-black" style={{ color: '#ffffff' }}>Vision AI — How It Works</h3>
+                  <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#ffffff' }}>YogAI Neural Stack</p>
                 </div>
               </div>
 
@@ -197,11 +201,11 @@ export default function Landing() {
                   { step: "03", title: "AI Feedback",     desc: "Groq LLM synthesizes alignment feedback into plain-language coaching tips tailored to your posture." },
                   { step: "04", title: "Rep Counting",    desc: "For exercises, the system tracks full range-of-motion cycles and counts reps with form validation." },
                 ].map((item) => (
-                  <div key={item.step} className="flex gap-4 rounded-2xl border border-white/8 bg-white/4 p-4">
-                    <span className="shrink-0 text-2xl font-black text-primary-400/40">{item.step}</span>
+                  <div key={item.step} className="flex gap-4 rounded-2xl border-2 border-white/30 bg-white/10 p-4 shadow-md">
+                    <span className="shrink-0 text-3xl font-black text-primary-300">{item.step}</span>
                     <div>
-                      <p className="text-sm font-semibold text-white">{item.title}</p>
-                      <p className="mt-1 text-xs text-slate-400 leading-5">{item.desc}</p>
+                      <p className="text-base font-black" style={{ color: '#ffffff' }}>{item.title}</p>
+                      <p className="mt-1 text-sm font-bold leading-5" style={{ color: '#ffffff' }}>{item.desc}</p>
                     </div>
                   </div>
                 ))}
@@ -224,10 +228,10 @@ export default function Landing() {
 function Feature({ icon: Icon, label, color }) {
   return (
     <div className="flex flex-col items-center gap-4 group">
-      <div className={`p-4 rounded-2xl bg-white/5 border border-white/10 ${color} group-hover:scale-110 transition-transform`}>
-        <Icon size={32} />
+      <div className={`p-5 rounded-2xl bg-white/20 border-2 border-white/50 text-white group-hover:scale-110 transition-transform shadow-lg`}>
+        <Icon size={36} color="#ffffff" />
       </div>
-      <span className="font-bold text-gray-200 tracking-wide text-sm uppercase">{label}</span>
+      <span className="font-black tracking-widest text-base uppercase drop-shadow-md" style={{ color: '#ffffff' }}>{label}</span>
     </div>
   );
 }
@@ -238,7 +242,8 @@ function FloatingTag({ label, position, delay }) {
       initial={{ y: 0 }}
       animate={{ y: [-10, 10, -10] }}
       transition={{ duration: 6, delay, repeat: Infinity, ease: "easeInOut" }}
-      className={`absolute ${position} hidden lg:block px-4 py-2 border border-white/10 bg-white/5 backdrop-blur rounded-xl font-black text-[10px] text-gray-500 tracking-[0.2em] uppercase`}
+      className={`absolute ${position} hidden lg:block px-5 py-2.5 border-2 border-white/50 bg-white/30 backdrop-blur-md rounded-xl font-black text-xs tracking-[0.25em] uppercase shadow-lg`}
+      style={{ color: '#ffffff' }}
     >
       {label}
     </motion.div>
