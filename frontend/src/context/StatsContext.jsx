@@ -3,11 +3,23 @@ import { createContext, useContext, useEffect, useState, useCallback } from "rea
 const StatsContext = createContext(null);
 
 export function StatsProvider({ children }) {
+  const getTodayHydration = () => {
+    const today = new Date().toDateString();
+    const stored = localStorage.getItem("yogai_hydration_date");
+    if (stored === today) {
+      return parseFloat(localStorage.getItem("yogai_hydration") || "0");
+    }
+    // New day — reset hydration
+    localStorage.setItem("yogai_hydration_date", today);
+    localStorage.setItem("yogai_hydration", "0");
+    return 0;
+  };
+
   const [stats, setStats] = useState({
     calories: 0,
     focus: 0,
     accuracy: 0,
-    hydration: 0,
+    hydration: getTodayHydration(),
     streak: parseInt(localStorage.getItem("yogai_streak") || "0", 10),
     goalAccuracy: 0,
     recovery: 100,
@@ -33,10 +45,12 @@ export function StatsProvider({ children }) {
   }, []);
 
   const addHydration = useCallback((amountInLiters) => {
-    setStats((prev) => ({
-      ...prev,
-      hydration: Number((prev.hydration + amountInLiters).toFixed(2))
-    }));
+    setStats((prev) => {
+      const newHydration = Number((prev.hydration + amountInLiters).toFixed(2));
+      localStorage.setItem("yogai_hydration", newHydration.toString());
+      localStorage.setItem("yogai_hydration_date", new Date().toDateString());
+      return { ...prev, hydration: newHydration };
+    });
   }, []);
 
   const incrementRecipesGenerated = useCallback(() => {
