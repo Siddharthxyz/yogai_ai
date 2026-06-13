@@ -1,8 +1,8 @@
 """
-Exercise Service (Video File Version)
+Exercise Service Live (Webcam - Threaded Version)
 ========================================
-Provides exercise tracking from video files stored on the server.
-Each exercise counter runs on a separate video file source.
+Provides real-time exercise tracking using the server's webcam.
+Handles live video capture with pose estimation.
 
 Supported exercises: bicep_curl, pushup, squat, deadlift, pullup
 """
@@ -19,13 +19,13 @@ from services.pose_module import PoseDetectorModified
 
 logger = logging.getLogger(__name__)
 
-class VideoExerciseTracker:
-    """Tracks exercises from a video file (MP4, AVI, etc.)"""
+class LiveExerciseTracker:
+    """Tracks exercises in real-time from webcam feed (source=0)"""
     
-    def __init__(self, exercise_type: str, video_path: str):
+    def __init__(self, exercise_type: str, source: int = 0):
         self.session_id = str(uuid.uuid4())
         self.exercise_type = exercise_type
-        self.video_path = video_path  # Path to video file
+        self.source = source  # Webcam index (0 for default)
         self.detector = PoseDetectorModified()
         
         self.counter = 0.0
@@ -46,30 +46,27 @@ class VideoExerciseTracker:
         self.start_time = time.time()
         self.thread = threading.Thread(target=self._run_loop, daemon=True)
         self.thread.start()
-        logger.info(f"Started video exercise tracker session {self.session_id} for {self.exercise_type} from {self.video_path}")
+        logger.info(f"Started live exercise tracker session {self.session_id} for {self.exercise_type}")
 
     def stop(self):
         self.is_running = False
         if self.thread:
             self.thread.join(timeout=2)
-        logger.info(f"Stopped video session {self.session_id}")
+        logger.info(f"Stopped live session {self.session_id}")
 
     def _run_loop(self):
-        cap = cv2.VideoCapture(self.video_path)
+        cap = cv2.VideoCapture(self.source)
         if not cap.isOpened():
-            self.form_msg = f"Error: Video {self.video_path} not found"
+            self.form_msg = f"Error: Webcam {self.source} not found"
             self.is_running = False
             return
 
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        logger.info(f"Video loop started for {self.exercise_type} at {fps} FPS")
+        logger.info(f"Live loop started for {self.exercise_type}")
 
         while self.is_running:
             success, frame = cap.read()
             if not success:
-                # Loop video if it ends
-                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                continue
+                break
 
             frame = self.detector.findPose(frame, draw=False)
             landmarks_list = self.detector.findPosition(frame, draw=False)
@@ -206,12 +203,12 @@ class VideoExerciseTracker:
                 
                 self.progress = progress_percentage
             else:
-                self.form_msg = "No pose detected"
-                self.feedback = "Position body in frame"
+                self.form_msg = "Step back! Full body needed"
+                self.feedback = "Camera needs wide view"
                 self.progress = 0
 
             if int(time.time() * 2) % 2 == 0:
-                logger.debug(f"Video Tracker: Counter={self.counter}, Feedback={self.feedback}, Progress={self.progress}")
+                logger.debug(f"Live Tracker: Counter={self.counter}, Feedback={self.feedback}, Progress={self.progress}")
 
             time.sleep(0.05)
 
@@ -229,19 +226,21 @@ class VideoExerciseTracker:
             "form_message": self.form_msg,
             "angles": self.angles,
             "duration": round(elapsed, 1),
-            "is_running": self.is_running,
-            "video_path": self.video_path
+            "is_running": self.is_running
         }
 
-class ExerciseService:
-    """Service for managing video file-based exercise tracking"""
+class ExerciseServiceLive:
+    """Service for managing live webcam-based exercise tracking"""
     
     def __init__(self):
-        self._sessions: Dict[str, VideoExerciseTracker] = {}
+        self._sessions: Dict[str, LiveExerciseTracker] = {}
 
-    def start_session(self, exercise_type: str, video_path: str) -> dict:
-        # Allow multiple video sessions (no camera conflicts)
-        tracker = VideoExerciseTracker(exercise_type, video_path)
+    def start_session(self, exercise_type: str, source: int = 0) -> dict:
+        # Stop any existing sessions to prevent camera conflicts
+        for sid in list(self._sessions.keys()):
+            self.stop_session(sid)
+            
+        tracker = LiveExerciseTracker(exercise_type, source)
         tracker.start()
         self._sessions[tracker.session_id] = tracker
         return tracker.get_status()
