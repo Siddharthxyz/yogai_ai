@@ -188,6 +188,86 @@ class LiveYogaTracker:
             else:
                 feedback_str = "Straighten your legs"
                 progress_val = 30
+
+        # Mountain Pose
+        elif pt == "mountain":
+            # Body straight: knees, hips, and standing tall
+            left_knee = self.detector.findAngle(img, 23, 25, 27, lmList, draw=False)
+            right_knee = self.detector.findAngle(img, 24, 26, 28, lmList, draw=False)
+            knee_angle = (left_knee + right_knee) / 2
+            
+            left_hip = self.detector.findAngle(img, 11, 23, 25, lmList, draw=False)
+            right_hip = self.detector.findAngle(img, 12, 24, 26, lmList, draw=False)
+            hip_angle = (left_hip + right_hip) / 2
+            
+            self.angles = {"knee_angle": knee_angle, "hip_angle": hip_angle}
+            
+            if knee_angle > 160:
+                if hip_angle > 160:
+                    is_correct = True
+                    feedback_str = "Perfect Mountain Pose!"
+                    form_msg_str = "Breathe deeply, stand tall"
+                    progress_val = 100
+                else:
+                    feedback_str = "Straighten your hips and back"
+                    progress_val = 60
+            else:
+                feedback_str = "Straighten your legs"
+                progress_val = 40
+
+        # Cobra Pose
+        elif pt == "cobra":
+            # Lying on stomach, chest lifted
+            # Hips should be somewhat straight but bending back
+            left_hip = self.detector.findAngle(img, 11, 23, 25, lmList, draw=False)
+            right_hip = self.detector.findAngle(img, 12, 24, 26, lmList, draw=False)
+            hip_angle = (left_hip + right_hip) / 2
+            
+            # Arms should be pushing up, elbows somewhat straight or slightly bent
+            left_elbow = self.detector.findAngle(img, 11, 13, 15, lmList, draw=False)
+            right_elbow = self.detector.findAngle(img, 12, 14, 16, lmList, draw=False)
+            elbow_angle = (left_elbow + right_elbow) / 2
+            
+            self.angles = {"hip_angle": hip_angle, "elbow_angle": elbow_angle}
+            
+            if elbow_angle > 120:
+                if hip_angle > 140:
+                    is_correct = True
+                    feedback_str = "Perfect Cobra Pose!"
+                    form_msg_str = "Keep shoulders down"
+                    progress_val = 100
+                else:
+                    feedback_str = "Lower your hips to the floor"
+                    progress_val = 70
+            else:
+                feedback_str = "Push up with your arms"
+                progress_val = 40
+
+        # Plank Pose
+        elif pt == "plank":
+            # Body straight, arms supporting
+            left_hip = self.detector.findAngle(img, 11, 23, 25, lmList, draw=False)
+            right_hip = self.detector.findAngle(img, 12, 24, 26, lmList, draw=False)
+            hip_angle = (left_hip + right_hip) / 2
+            
+            left_knee = self.detector.findAngle(img, 23, 25, 27, lmList, draw=False)
+            right_knee = self.detector.findAngle(img, 24, 26, 28, lmList, draw=False)
+            knee_angle = (left_knee + right_knee) / 2
+            
+            self.angles = {"hip_angle": hip_angle, "knee_angle": knee_angle}
+            
+            if knee_angle > 150:
+                if hip_angle > 150 and hip_angle < 190:
+                    is_correct = True
+                    feedback_str = "Perfect Plank Pose!"
+                    form_msg_str = "Engage your core"
+                    progress_val = 100
+                else:
+                    feedback_str = "Keep your body in a straight line"
+                    progress_val = 70
+            else:
+                feedback_str = "Straighten your legs"
+                progress_val = 40
                 
         else:
             feedback_str = "Unknown Pose"

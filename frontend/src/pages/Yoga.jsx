@@ -22,10 +22,13 @@ const poses = [
   { type: "tree", label: "Tree Pose", icon: Activity },
   { type: "warrior", label: "Warrior II", icon: Waves },
   { type: "downward_dog", label: "Downward Dog", icon: Activity },
+  { type: "mountain", label: "Mountain Pose", icon: Activity },
+  { type: "cobra", label: "Cobra Pose", icon: Waves },
+  { type: "plank", label: "Plank Pose", icon: Activity },
 ];
 
 export default function Yoga() {
-  const [selected, setSelected] = useState("tree");
+  const [selected, setSelected] = useState(null);
   const [session, setSession] = useState(null);
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -150,8 +153,10 @@ export default function Yoga() {
       const res = await api.post("/yoga/recommend", { 
         context,
         session_accuracy: sessionAccuracy,
-        last_pose: selected,
-        hold_time: lastHoldTime
+        last_pose: session ? selected : "", 
+        hold_time: lastHoldTime,
+        target_pose: selected || "",
+        previous_recommendation: aiRecommendation || ""
       });
       setAiRecommendation(res.data.recommendation);
     } catch (error) {
@@ -196,7 +201,7 @@ export default function Yoga() {
               </div>
               {!uploadMode ? (
                 <>
-                  <Button onClick={startSession} disabled={loading || session}>
+                  <Button onClick={startSession} disabled={loading || session || !selected}>
                     <Play size={16} />
                     Start Pose
                   </Button>
@@ -232,12 +237,19 @@ export default function Yoga() {
                  const imgMap = {
                    tree: { src: "/assets/tree_pose.png", label: "Tree Pose" },
                    warrior: { src: "/assets/warrior_pose.png", label: "Warrior II" },
-                   dog: { src: "/assets/dog_pose.png", label: "Downward Dog" }
+                   dog: { src: "/assets/dog_pose.png", label: "Downward Dog" },
+                   mountain: { src: "/assets/mountain_pose.png", label: "Mountain Pose" },
+                   cobra: { src: "/assets/cobra_pose.png", label: "Cobra Pose" },
+                   plank: { src: "/assets/plank_pose.png", label: "Plank Pose" }
                  };
                  const match = Object.keys(imgMap).find(k => recLower.includes(k));
                  if (match) {
+                   const poseTypeKey = match === 'dog' ? 'downward_dog' : match;
                    return (
-                     <div className="w-full md:w-64 h-64 shrink-0 rounded-2xl overflow-hidden relative border border-white/10 group shadow-[0_0_30px_rgba(0,0,0,0.5)]">
+                     <div 
+                       onClick={() => { setSelected(poseTypeKey); toast.info("Pose Selected", `Ready to start ${imgMap[match].label}.`); }}
+                       className={`w-full md:w-64 h-64 shrink-0 rounded-2xl overflow-hidden relative border group shadow-[0_0_30px_rgba(0,0,0,0.5)] cursor-pointer transition ${selected === poseTypeKey ? 'border-primary-400 ring-2 ring-primary-400/50' : 'border-white/10 hover:border-primary-400/50'}`}
+                     >
                        <img 
                          src={imgMap[match].src} 
                          alt={imgMap[match].label} 
@@ -245,7 +257,7 @@ export default function Yoga() {
                        />
                        <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-transparent"></div>
                        <div className="absolute bottom-4 left-4 right-4 text-white">
-                         <p className="text-xs font-bold uppercase tracking-wider text-primary-300 mb-1">Recommended</p>
+                         <p className="text-xs font-bold uppercase tracking-wider text-primary-300 mb-1">Click to Select</p>
                          <p className="font-semibold text-lg">{imgMap[match].label}</p>
                        </div>
                      </div>
@@ -264,7 +276,7 @@ export default function Yoga() {
               return (
                 <button
                   key={p.type}
-                  onClick={() => !session && setSelected(p.type)}
+                  onClick={() => !session && setSelected(prev => prev === p.type ? null : p.type)}
                   className={`flex shrink-0 items-center gap-2 rounded-2xl border px-5 py-3 text-sm font-medium transition ${
                     active
                       ? "border-primary-400/50 bg-primary-400/20 text-primary-200"

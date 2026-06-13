@@ -14,6 +14,8 @@ class YogaRecommendRequest(BaseModel):
     session_accuracy: float = 0.0   # 0-100 from last session
     last_pose: str = ""             # e.g. "tree", "warrior"
     hold_time: float = 0.0          # seconds held in last session
+    target_pose: str = ""
+    previous_recommendation: str = ""
 
 pose_bp = APIRouter()
 detector = PoseDetectorModified()
@@ -83,37 +85,52 @@ def stop_live_yoga(session_id: str):
 def recommend_yoga(req: YogaRecommendRequest):
     rs = RecipeService()
     
-    # Build a rich, accuracy-aware prompt
-    accuracy_note = ""
-    if req.last_pose and req.session_accuracy > 0:
-        if req.session_accuracy >= 80:
-            accuracy_note = (
-                f"In their last session they practiced the {req.last_pose.replace('_', ' ').title()} pose "
-                f"with excellent accuracy ({req.session_accuracy:.0f}%) and held it for {req.hold_time:.0f}s. "
-                "They are ready for a more advanced challenge."
-            )
-        elif req.session_accuracy >= 50:
-            accuracy_note = (
-                f"In their last session they practiced the {req.last_pose.replace('_', ' ').title()} pose "
-                f"with moderate accuracy ({req.session_accuracy:.0f}%) and held it for {req.hold_time:.0f}s. "
-                "Recommend a pose that addresses weak points or consolidates this pose."
-            )
-        else:
-            accuracy_note = (
-                f"In their last session they struggled with the {req.last_pose.replace('_', ' ').title()} pose "
-                f"(only {req.session_accuracy:.0f}% accuracy, {req.hold_time:.0f}s hold). "
-                "Recommend a simpler, foundational pose to build strength and balance."
-            )
-    
-    prompt = (
-        "You are an expert AI Yoga Coach. Based on the user profile and recent session performance, "
-        "recommend exactly ONE specific yoga pose by name (like Tree Pose, Warrior II, Downward Dog, "
-        "Child's Pose, Mountain Pose, etc.). Explain briefly why this pose is ideal for them right now, "
-        "and give 2-3 simple tips on how to perform it correctly. Keep it under 100 words. Be warm and motivating.\n\n"
-        f"User Profile: {req.context}\n"
-        f"{accuracy_note}\n"
-        "Recommendation:"
-    )
+    if req.target_pose:
+        # User selected a specific pose from the 6 and clicked AI Recommend
+        pose_name = req.target_pose.replace('_', ' ').title()
+        prompt = (
+            f"You are an expert AI Yoga Coach. The user wants to learn more about '{pose_name}'. "
+            f"Based on their profile ({req.context}), give 3 clear, step-by-step instructions on how to perform "
+            f"'{pose_name}' correctly. Explain briefly why it is good for them right now. Keep it under 120 words. "
+            f"Be warm and motivating."
+        )
+    else:
+        # Build a rich, accuracy-aware prompt
+        accuracy_note = ""
+        if req.last_pose and req.session_accuracy > 0:
+            if req.session_accuracy >= 80:
+                accuracy_note = (
+                    f"In their last session they practiced the {req.last_pose.replace('_', ' ').title()} pose "
+                    f"with excellent accuracy ({req.session_accuracy:.0f}%) and held it for {req.hold_time:.0f}s. "
+                    "They are ready for a more advanced challenge."
+                )
+            elif req.session_accuracy >= 50:
+                accuracy_note = (
+                    f"In their last session they practiced the {req.last_pose.replace('_', ' ').title()} pose "
+                    f"with moderate accuracy ({req.session_accuracy:.0f}%) and held it for {req.hold_time:.0f}s. "
+                    "Recommend a pose that addresses weak points or consolidates this pose."
+                )
+            else:
+                accuracy_note = (
+                    f"In their last session they struggled with the {req.last_pose.replace('_', ' ').title()} pose "
+                    f"(only {req.session_accuracy:.0f}% accuracy, {req.hold_time:.0f}s hold). "
+                    "Recommend a simpler, foundational pose to build strength and balance."
+                )
+
+        core_poses = ["Tree Pose", "Warrior II", "Downward Dog", "Mountain Pose", "Cobra Pose", "Plank Pose"]
+
+        prompt = (
+            "You are an expert AI Yoga Coach. Based on the user profile and recent session performance, "
+            "recommend exactly ONE specific yoga pose. You can recommend ANY yoga pose that suits the user's current level. "
+            f"CRITICAL: Do NOT recommend any of these poses: {', '.join(core_poses)}. Pick a completely different, unique pose. "
+            f"Do not recommend whatever pose they just did last time. "
+            "Explain briefly why this unique pose is ideal for them right now, and provide 3 clear step-by-step instructions on how "
+            "to perform it correctly. Keep it under 120 words. Be warm and motivating.\n\n"
+            f"User Profile: {req.context}\n"
+            f"{accuracy_note}\n"
+            "Recommendation:"
+        )
+
     result = rs.query_groq(prompt)
     return {"recommendation": result}
 
