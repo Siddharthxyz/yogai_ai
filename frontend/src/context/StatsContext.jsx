@@ -15,6 +15,7 @@ export function StatsProvider({ children }) {
     weeklyPerformance: 0,
     recipesGenerated: parseInt(localStorage.getItem("yogai_recipes_generated") || "0", 10),
     sessions: parseInt(localStorage.getItem("yogai_sessions") || "0", 10),
+    activeMinutes: parseInt(localStorage.getItem("yogai_active_minutes") || "0", 10),
   });
 
   const incrementStreak = useCallback(() => {
@@ -55,6 +56,14 @@ export function StatsProvider({ children }) {
     });
   }, []);
 
+  const addActiveMinutes = useCallback((minutes) => {
+    setStats((prev) => {
+      const newMinutes = prev.activeMinutes + minutes;
+      localStorage.setItem("yogai_active_minutes", newMinutes.toString());
+      return { ...prev, activeMinutes: newMinutes };
+    });
+  }, []);
+
   // Global "Wearable" Simulation
   // Slowly ticks up calories and slightly varies focus/accuracy over time
   useEffect(() => {
@@ -79,7 +88,7 @@ export function StatsProvider({ children }) {
   }, []);
 
   return (
-    <StatsContext.Provider value={{ stats, setStats, incrementStreak, addHydration, incrementRecipesGenerated, incrementSessions }}>
+    <StatsContext.Provider value={{ stats, setStats, incrementStreak, addHydration, incrementRecipesGenerated, incrementSessions, addActiveMinutes }}>
       {children}
     </StatsContext.Provider>
   );

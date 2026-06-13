@@ -40,7 +40,7 @@ export default function Yoga() {
   const pollingRef = useRef(null);
   const toast = useToast();
   const { user } = useAuth();
-  const { stats, incrementStreak, incrementSessions } = useStats();
+  const { stats, incrementStreak, incrementSessions, addActiveMinutes } = useStats();
 
   useEffect(() => {
     if (!session?.session_id) return undefined;
@@ -91,6 +91,7 @@ export default function Yoga() {
       toast.info("Session ended", `You held perfect form for ${holdTime} seconds.`);
       incrementStreak(); // Streak increments on validated session
       incrementSessions();
+      addActiveMinutes(Math.max(1, Math.round(holdTime / 60)));
     } catch (error) {
       console.error("Stop session failed", error);
     } finally {
@@ -131,6 +132,7 @@ export default function Yoga() {
       });
       incrementStreak(); // Streak increments on successful upload analysis
       incrementSessions();
+      addActiveMinutes(Math.max(1, Math.round(response.data.hold_time / 60)));
       toast.success("Analysis Complete", `You held ${poses.find(p=>p.type === selected)?.label} for ${response.data.hold_time} seconds!`);
     } catch (error) {
       toast.error("Upload Failed", "Could not analyze the video.");

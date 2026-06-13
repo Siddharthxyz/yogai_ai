@@ -174,14 +174,7 @@ export default function Dashboard() {
             </h2>
           </div>
           
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            <BiometricCard 
-              label="Calories Burned" 
-              value={stats.calories} 
-              icon={Flame} 
-              color="text-orange-400" 
-              bg="bg-orange-500/10" 
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             <BiometricCard 
               label="Hydration" 
               value={`${stats.hydration}L`} 

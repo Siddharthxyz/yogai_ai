@@ -41,7 +41,6 @@ export default function Profile() {
 
   const dynamicStats = [
     { label: "Sessions logged",      value: stats?.sessions || 0 },
-    { label: "Calories logged",      value: `${stats?.calories || 0} kcal` },
     { label: "Yoga streak",          value: `${stats?.streak || 0} days` },
     { label: "Recipes generated",    value: stats?.recipesGenerated || 0 },
   ];

@@ -59,9 +59,9 @@ export default function MainLayout({ children }) {
 
   const toggleTheme = () => setTheme((t) => (t === "dark" ? "light" : "dark"));
 
-  // Hydration Reminder (Standard 30 min)
+  // Hydration Reminder
   useEffect(() => {
-    const hydrationInterval = setInterval(() => {
+    const triggerHydration = () => {
       setNotifications(prev => [
         {
           id: Date.now(),
@@ -72,9 +72,17 @@ export default function MainLayout({ children }) {
         },
         ...prev
       ]);
-    }, 30 * 60 * 1000); // 30 minutes
+    };
+
+    // Trigger shortly after load for testing/visibility
+    const initialTimer = setTimeout(triggerHydration, 5000);
+    // Then every 30 minutes
+    const hydrationInterval = setInterval(triggerHydration, 30 * 60 * 1000);
     
-    return () => clearInterval(hydrationInterval);
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(hydrationInterval);
+    };
   }, []);
 
   const handleNotificationAction = (notif) => {

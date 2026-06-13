@@ -31,7 +31,7 @@ export default function Exercise() {
   const [loading, setLoading] = useState(false);
   const pollingRef = useRef(null);
   const toast = useToast();
-  const { incrementStreak, incrementSessions } = useStats();
+  const { incrementStreak, incrementSessions, addActiveMinutes } = useStats();
 
   useEffect(() => {
     if (!session?.session_id) return undefined;
@@ -79,6 +79,7 @@ export default function Exercise() {
       toast.info("Session ended", `You completed ${status?.reps ?? 0} reps in ${status?.duration ?? 0}s.`);
       incrementStreak(); // Streak increments on validated session
       incrementSessions();
+      addActiveMinutes(Math.max(1, Math.round((status?.duration ?? 0) / 60)));
     } catch (error) {
       console.error("Stop session failed", error);
     } finally {
