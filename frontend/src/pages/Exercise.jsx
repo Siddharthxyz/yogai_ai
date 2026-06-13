@@ -15,6 +15,7 @@ import Webcam from "react-webcam";
 import { Button, Card, FadeIn, MetricBox } from "../components/ui";
 import { useToast } from "../components/Toast";
 import FeedBackCard from "../components/FeedBackCard";
+import { useStats } from "../context/StatsContext";
 
 const workouts = [
   { type: "bicep_curl", label: "Bicep Curl", icon: Dumbbell },
@@ -30,6 +31,7 @@ export default function Exercise() {
   const [loading, setLoading] = useState(false);
   const pollingRef = useRef(null);
   const toast = useToast();
+  const { incrementStreak } = useStats();
 
   useEffect(() => {
     if (!session?.session_id) return undefined;
@@ -75,6 +77,7 @@ export default function Exercise() {
     try {
       await api.post(`/exercise/stop/${session.session_id}`);
       toast.info("Session ended", `You completed ${status?.reps ?? 0} reps in ${status?.duration ?? 0}s.`);
+      incrementStreak(); // Streak increments on validated session
     } catch (error) {
       console.error("Stop session failed", error);
     } finally {

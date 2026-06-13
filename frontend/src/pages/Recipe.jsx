@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import recipeAPI from "../services/recipeService";
 import api from "../services/api";
-import { Button, Card, FadeIn, MetricBox, cn } from "../components/ui";
+import { Button, Card, FadeIn, cn } from "../components/ui";
 import { ChatHistory } from "../components/ChatBubble";
 import { useToast } from "../components/Toast";
 import { useAuth } from "../context/AuthContext";
@@ -80,8 +80,8 @@ function normalizeRecipe(recipe) {
 
   if (normalized.steps.length === 0) {
     const numberedSteps = lines
-      .filter((line) => /^\d+[\).\s-]/.test(line))
-      .map((line) => line.replace(/^\d+[\).\s-]*/, "").trim())
+      .filter((line) => /^\d+[).\s-]/.test(line))
+      .map((line) => line.replace(/^\d+[).\s-]*/, "").trim())
       .filter(Boolean);
 
     if (numberedSteps.length > 0) {
@@ -141,7 +141,6 @@ export default function Recipe() {
   const [loadingRecipe, setLoadingRecipe] = useState(false);
   const [loadingChat, setLoadingChat] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const [favoritesOpen, setFavoritesOpen] = useState(false);
   const [favorites, setFavorites] = useState(() => {
     try { return JSON.parse(localStorage.getItem("yogai_favorites") || "[]"); } catch { return []; }
   });
@@ -317,7 +316,7 @@ export default function Recipe() {
                 icon={Heart}
                 label="Favorites"
                 sublabel="Saved ideas"
-                onClick={() => setFavoritesOpen((o) => !o)}
+                onClick={() => toast.info("Favorites are shown below", "Save recipes then scroll down to view them.")}
               />
             </div>
           </div>

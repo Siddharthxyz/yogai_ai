@@ -79,8 +79,8 @@ class LiveYogaTracker:
                 if len(lmList) > 0:
                     self._analyze_pose(img, lmList)
                 else:
-                    self.form_msg = "No person detected"
-                    self.feedback = "Fix Form"
+                    self.form_msg = "Step back! Full body needed"
+                    self.feedback = "Camera needs wide view"
                     self.progress = 0
                     self.is_perfect = False
                     self.perfect_form_start = None

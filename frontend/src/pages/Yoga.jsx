@@ -35,10 +35,12 @@ export default function Yoga() {
   const [uploading, setUploading] = useState(false);
   const [recommending, setRecommending] = useState(false);
   const [aiRecommendation, setAiRecommendation] = useState("");
+  const [sessionAccuracy, setSessionAccuracy] = useState(0);
+  const [lastHoldTime, setLastHoldTime] = useState(0);
   const pollingRef = useRef(null);
   const toast = useToast();
   const { user } = useAuth();
-  const { stats } = useStats();
+  const { stats, incrementStreak } = useStats();
 
   useEffect(() => {
     if (!session?.session_id) return undefined;
@@ -81,7 +83,13 @@ export default function Yoga() {
     if (!session?.session_id) return;
     try {
       await api.post(`/yoga/stop_live/${session.session_id}`);
-      toast.info("Session ended", `You held perfect form for ${status?.hold_time ?? 0} seconds.`);
+      // Capture accuracy and hold time for AI recommendation
+      const accuracy = status?.progress ?? 0;
+      const holdTime = status?.hold_time ?? 0;
+      setSessionAccuracy(accuracy);
+      setLastHoldTime(holdTime);
+      toast.info("Session ended", `You held perfect form for ${holdTime} seconds.`);
+      incrementStreak(); // Streak increments on validated session
     } catch (error) {
       console.error("Stop session failed", error);
     } finally {
@@ -120,6 +128,7 @@ export default function Yoga() {
         hold_time: response.data.hold_time,
         angles: {}
       });
+      incrementStreak(); // Streak increments on successful upload analysis
       toast.success("Analysis Complete", `You held ${poses.find(p=>p.type === selected)?.label} for ${response.data.hold_time} seconds!`);
     } catch (error) {
       toast.error("Upload Failed", "Could not analyze the video.");
@@ -132,8 +141,14 @@ export default function Yoga() {
     if (!user) return toast.warning("Sign in required", "Please sign in for personalized recommendations.");
     setRecommending(true);
     try {
-      const context = `Age: ${user.age}, BMI: ${user.weight && user.height ? (user.weight/((user.height/100)**2)).toFixed(1) : 'Unknown'}, Goals: ${user.goals?.join(', ')}. Currently burnt ${stats.calories} kcal.`;
-      const res = await api.post("/yoga/recommend", { context });
+      const bmi = user.weight && user.height ? (user.weight/((user.height/100)**2)).toFixed(1) : 'Unknown';
+      const context = `Name: ${user.name}, Age: ${user.age}, BMI: ${bmi}, Goals: ${user.goals?.join(', ')}. Currently burnt ${stats.calories} kcal.`;
+      const res = await api.post("/yoga/recommend", { 
+        context,
+        session_accuracy: sessionAccuracy,
+        last_pose: selected,
+        hold_time: lastHoldTime
+      });
       setAiRecommendation(res.data.recommendation);
     } catch (error) {
       toast.error("AI Error", "Failed to fetch recommendation.");
@@ -198,9 +213,42 @@ export default function Yoga() {
 
           {/* AI Recommendation Box */}
           {aiRecommendation && (
-             <div className="mt-6 rounded-2xl border border-primary-500/30 bg-primary-500/10 p-5">
-               <h3 className="text-sm font-semibold text-primary-300 flex items-center gap-2 mb-2"><Wand2 size={14}/> Llama 3 Recommendation</h3>
-               <p className="text-sm text-white/90 leading-relaxed">{aiRecommendation}</p>
+             <div className="mt-6 overflow-hidden rounded-3xl border border-primary-500/30 bg-slate-900/50 shadow-2xl backdrop-blur-md flex flex-col md:flex-row items-center gap-6 p-6">
+               <div className="flex-1">
+                 <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-3">
+                   <Wand2 size={20} className="text-primary-400" /> 
+                   AI Prescribed Flow
+                 </h3>
+                 <p className="text-base text-slate-300 leading-relaxed bg-white/5 p-4 rounded-2xl border border-white/5">
+                   {aiRecommendation}
+                 </p>
+               </div>
+               {(() => {
+                 const recLower = aiRecommendation.toLowerCase();
+                 const imgMap = {
+                   tree: { src: "/assets/tree_pose.png", label: "Tree Pose" },
+                   warrior: { src: "/assets/warrior_pose.png", label: "Warrior II" },
+                   dog: { src: "/assets/dog_pose.png", label: "Downward Dog" }
+                 };
+                 const match = Object.keys(imgMap).find(k => recLower.includes(k));
+                 if (match) {
+                   return (
+                     <div className="w-full md:w-64 h-64 shrink-0 rounded-2xl overflow-hidden relative border border-white/10 group shadow-[0_0_30px_rgba(0,0,0,0.5)]">
+                       <img 
+                         src={imgMap[match].src} 
+                         alt={imgMap[match].label} 
+                         className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" 
+                       />
+                       <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-transparent"></div>
+                       <div className="absolute bottom-4 left-4 right-4 text-white">
+                         <p className="text-xs font-bold uppercase tracking-wider text-primary-300 mb-1">Recommended</p>
+                         <p className="font-semibold text-lg">{imgMap[match].label}</p>
+                       </div>
+                     </div>
+                   );
+                 }
+                 return null;
+               })()}
              </div>
           )}
 

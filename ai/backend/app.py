@@ -13,6 +13,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from routes.chat import chat_bp
 from routes.pose import pose_bp
 from routes.exercise import exercise_bp
+from routes.auth import router as auth_router
+from database import engine
+import models
+
+# Create all database tables
+models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="YogAI Backend",
@@ -33,6 +39,7 @@ app.add_middleware(
 app.include_router(chat_bp, prefix="/api")        # recipe + chat + upload
 app.include_router(pose_bp, prefix="/api")        # yoga pose detection
 app.include_router(exercise_bp, prefix="/api")    # exercise counter
+app.include_router(auth_router)                   # user authentication
 
 
 # ─── Health check ─────────────────────────────────────────────────────────────

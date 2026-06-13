@@ -221,6 +221,8 @@ class LiveExerciseTracker:
                 
                 self.progress = progress_percentage
             else:
+                self.form_msg = "Step back! Full body needed"
+                self.feedback = "Camera needs wide view"
                 self.progress = 0
 
             # Internal logging for debugging
@@ -230,7 +232,7 @@ class LiveExerciseTracker:
             # Removed cv2.imshow to prevent thread GUI hangs on Windows
             # The frontend will poll status to show progress/reps
             
-            time.sleep(0.01)
+            time.sleep(0.05)
 
         cap.release()
         cv2.destroyAllWindows()

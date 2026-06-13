@@ -11,6 +11,9 @@ from pydantic import BaseModel
 
 class YogaRecommendRequest(BaseModel):
     context: str
+    session_accuracy: float = 0.0   # 0-100 from last session
+    last_pose: str = ""             # e.g. "tree", "warrior"
+    hold_time: float = 0.0          # seconds held in last session
 
 pose_bp = APIRouter()
 detector = PoseDetectorModified()
@@ -79,11 +82,37 @@ def stop_live_yoga(session_id: str):
 @pose_bp.post("/yoga/recommend")
 def recommend_yoga(req: YogaRecommendRequest):
     rs = RecipeService()
+    
+    # Build a rich, accuracy-aware prompt
+    accuracy_note = ""
+    if req.last_pose and req.session_accuracy > 0:
+        if req.session_accuracy >= 80:
+            accuracy_note = (
+                f"In their last session they practiced the {req.last_pose.replace('_', ' ').title()} pose "
+                f"with excellent accuracy ({req.session_accuracy:.0f}%) and held it for {req.hold_time:.0f}s. "
+                "They are ready for a more advanced challenge."
+            )
+        elif req.session_accuracy >= 50:
+            accuracy_note = (
+                f"In their last session they practiced the {req.last_pose.replace('_', ' ').title()} pose "
+                f"with moderate accuracy ({req.session_accuracy:.0f}%) and held it for {req.hold_time:.0f}s. "
+                "Recommend a pose that addresses weak points or consolidates this pose."
+            )
+        else:
+            accuracy_note = (
+                f"In their last session they struggled with the {req.last_pose.replace('_', ' ').title()} pose "
+                f"(only {req.session_accuracy:.0f}% accuracy, {req.hold_time:.0f}s hold). "
+                "Recommend a simpler, foundational pose to build strength and balance."
+            )
+    
     prompt = (
-        "You are an AI Yoga Instructor. Based on the user's data, recommend ONE specific yoga pose "
-        "that would be beneficial for them. Keep it brief and motivating.\n"
-        f"User Data: {req.context}\n"
-        "Assistant:"
+        "You are an expert AI Yoga Coach. Based on the user profile and recent session performance, "
+        "recommend exactly ONE specific yoga pose by name (like Tree Pose, Warrior II, Downward Dog, "
+        "Child's Pose, Mountain Pose, etc.). Explain briefly why this pose is ideal for them right now, "
+        "and give 2-3 simple tips on how to perform it correctly. Keep it under 100 words. Be warm and motivating.\n\n"
+        f"User Profile: {req.context}\n"
+        f"{accuracy_note}\n"
+        "Recommendation:"
     )
     result = rs.query_groq(prompt)
     return {"recommendation": result}
