@@ -64,28 +64,67 @@ class LiveYogaTracker:
             self.is_running = False
             return
 
+        is_video_file = self.source != "0" and self.source != "1"
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        if fps <= 0: fps = 30
+        
+        frames_processed = 0
         logger.info(f"Yoga loop started for {self.session_id}")
+        
         try:
             while self.is_running:
                 success, img = cap.read()
                 if not success:
+                    if is_video_file:
+                        logger.info("End of video file reached.")
+                        self.is_running = False
+                        break
                     logger.warning("Failed to grab frame. Retrying...")
                     time.sleep(0.5)
                     continue
 
+                frames_processed += 1
+                
+                if is_video_file:
+                    # Subsample to ~10 FPS for performance
+                    if frames_processed % max(1, int(fps/10)) != 0:
+                        continue
+
                 img = self.detector.findPose(img, draw=False)
                 lmList = self.detector.findPosition(img, draw=False)
+
+                # Fallback for sideways videos (missing rotation metadata)
+                if len(lmList) == 0 and is_video_file:
+                    img_rot1 = cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE)
+                    img_rot1 = self.detector.findPose(img_rot1, draw=False)
+                    lmList1 = self.detector.findPosition(img_rot1, draw=False)
+                    
+                    if len(lmList1) > 0:
+                        img = img_rot1
+                        lmList = lmList1
+                    else:
+                        img_rot2 = cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)
+                        img_rot2 = self.detector.findPose(img_rot2, draw=False)
+                        lmList2 = self.detector.findPosition(img_rot2, draw=False)
+                        if len(lmList2) > 0:
+                            img = img_rot2
+                            lmList = lmList2
 
                 if len(lmList) > 0:
                     self._analyze_pose(img, lmList)
                 else:
+                    # Debug: save the first failed frame to see what OpenCV sees
+                    if not hasattr(self, 'saved_debug_frame') and is_video_file:
+                        cv2.imwrite("C:/Users/manis/OneDrive/Desktop/Project/yogai_ai/ai/backend/failed_frame.jpg", img)
+                        self.saved_debug_frame = True
+                        
                     self.form_msg = "Step back! Full body needed"
                     self.feedback = "Camera needs wide view"
                     self.progress = 0
                     self.is_perfect = False
                     self.perfect_form_start = None
 
-                time.sleep(0.1)  # ~10 FPS
+                time.sleep(0.1)  # Process at roughly 10 FPS to match real-time
 
         except Exception as e:
             logger.error(f"Error in yoga loop {self.session_id}: {e}")
@@ -96,179 +135,244 @@ class LiveYogaTracker:
 
     def _analyze_pose(self, img, lmList):
         pt = self.pose_type.lower()
-        
-        # Helper variables
+
         is_correct = False
         feedback_str = "Adjusting..."
         form_msg_str = "Aligning Body"
         progress_val = 0
 
-        # Tree Pose
+        # MediaPipe Pose Landmark indices (33 total):
+        # 0=nose, 11=L_shoulder, 12=R_shoulder
+        # 13=L_elbow, 14=R_elbow, 15=L_wrist, 16=R_wrist
+        # 23=L_hip, 24=R_hip, 25=L_knee, 26=R_knee
+        # 27=L_ankle, 28=R_ankle, 29=L_heel, 30=R_heel
+
+        # ── TREE POSE ────────────────────────────────────────────────────────────
         if pt == "tree":
-            # Standing leg straight (let's assume right leg is standing)
-            right_knee_angle = self.detector.findAngle(img, 24, 26, 28, lmList, draw=False)
-            # Bent leg (left leg)
-            left_knee_angle = self.detector.findAngle(img, 23, 25, 27, lmList, draw=False)
-            
-            # Since camera might flip, we check both
-            standing_angle = max(right_knee_angle, left_knee_angle)
-            bent_angle = min(right_knee_angle, left_knee_angle)
-
-            self.angles = {"standing_knee": standing_angle, "bent_knee": bent_angle}
-            
-            # Tree Pose Logic: one leg straight (~160-180), one leg bent (<90)
-            if standing_angle > 160:
-                if bent_angle < 100:
-                    is_correct = True
-                    feedback_str = "Perfect Tree Pose!"
-                    form_msg_str = "Hold Steady"
-                    progress_val = 100
-                else:
-                    feedback_str = "Bend your lifted knee more"
-                    progress_val = 50
-            else:
-                feedback_str = "Straighten your standing leg"
-                progress_val = 20
-
-        # Warrior II
-        elif pt == "warrior":
-            # Arms horizontal
-            left_shoulder = self.detector.findAngle(img, 13, 11, 23, lmList, draw=False)
-            right_shoulder = self.detector.findAngle(img, 14, 12, 24, lmList, draw=False)
-            
-            # Legs: one bent ~90, one straight ~180
-            left_knee = self.detector.findAngle(img, 23, 25, 27, lmList, draw=False)
+            # Both knees
+            left_knee  = self.detector.findAngle(img, 23, 25, 27, lmList, draw=False)
             right_knee = self.detector.findAngle(img, 24, 26, 28, lmList, draw=False)
-            
-            front_knee = min(left_knee, right_knee)
-            back_knee = max(left_knee, right_knee)
-            
-            self.angles = {"front_knee": front_knee, "back_knee": back_knee, "l_shoulder": left_shoulder, "r_shoulder": right_shoulder}
 
-            if back_knee > 150:
-                if front_knee < 110:
-                    if 70 < left_shoulder < 110 and 70 < right_shoulder < 110:
+            # Standing leg = more extended; lifted leg = more bent
+            standing = max(left_knee, right_knee)
+            bent     = min(left_knee, right_knee)
+
+            # Spine upright: shoulder-hip-knee alignment
+            left_hip_align  = self.detector.findAngle(img, 11, 23, 25, lmList, draw=False)
+            right_hip_align = self.detector.findAngle(img, 12, 24, 26, lmList, draw=False)
+            hip_align = (left_hip_align + right_hip_align) / 2
+
+            self.angles = {"standing_knee": round(standing,1), "bent_knee": round(bent,1), "hip_align": round(hip_align,1)}
+
+            if standing > 155:
+                if bent < 110:
+                    if hip_align > 140:
                         is_correct = True
-                        feedback_str = "Perfect Warrior II!"
-                        form_msg_str = "Breathe Deeply"
+                        feedback_str = "Perfect Tree Pose!"
+                        form_msg_str = "Hold steady, arms overhead"
                         progress_val = 100
                     else:
-                        feedback_str = "Keep your arms horizontal"
-                        progress_val = 80
+                        feedback_str = "Stand taller, straighten your spine"
+                        progress_val = 75
                 else:
-                    feedback_str = "Lunge deeper on your front leg"
+                    feedback_str = "Lift and bend your knee higher"
                     progress_val = 50
             else:
-                feedback_str = "Straighten your back leg"
-                progress_val = 20
+                feedback_str = "Straighten your standing leg fully"
+                progress_val = 25
 
-        # Downward Dog
+        # ── WARRIOR II ───────────────────────────────────────────────────────────
+        elif pt == "warrior":
+            left_knee  = self.detector.findAngle(img, 23, 25, 27, lmList, draw=False)
+            right_knee = self.detector.findAngle(img, 24, 26, 28, lmList, draw=False)
+
+            front_knee = min(left_knee, right_knee)   # bent ~80-100°
+            back_knee  = max(left_knee, right_knee)   # straight >155°
+
+            # Arms horizontal: elbow-shoulder-hip angle should be ~90°
+            left_arm  = self.detector.findAngle(img, 13, 11, 23, lmList, draw=False)
+            right_arm = self.detector.findAngle(img, 14, 12, 24, lmList, draw=False)
+
+            self.angles = {
+                "front_knee": round(front_knee,1),
+                "back_knee":  round(back_knee,1),
+                "left_arm":   round(left_arm,1),
+                "right_arm":  round(right_arm,1)
+            }
+
+            if back_knee > 155:
+                if front_knee < 115:
+                    arms_ok = (60 < left_arm < 120) or (60 < right_arm < 120)
+                    if arms_ok:
+                        is_correct = True
+                        feedback_str = "Perfect Warrior II!"
+                        form_msg_str = "Breathe deeply, gaze forward"
+                        progress_val = 100
+                    else:
+                        feedback_str = "Extend arms fully, keep them parallel to floor"
+                        progress_val = 75
+                else:
+                    feedback_str = "Bend your front knee deeper (aim for 90°)"
+                    progress_val = 50
+            else:
+                feedback_str = "Straighten your back leg fully"
+                progress_val = 25
+
+        # ── DOWNWARD DOG ─────────────────────────────────────────────────────────
         elif pt == "downward_dog":
-            # Hips folded
-            left_hip = self.detector.findAngle(img, 11, 23, 25, lmList, draw=False)
+            # Hip fold: shoulder-hip-knee, should be acute (<100°)
+            left_hip  = self.detector.findAngle(img, 11, 23, 25, lmList, draw=False)
             right_hip = self.detector.findAngle(img, 12, 24, 26, lmList, draw=False)
             hip_angle = (left_hip + right_hip) / 2
-            
-            # Knees and arms straight
-            left_knee = self.detector.findAngle(img, 23, 25, 27, lmList, draw=False)
+
+            # Knees straight (>150°)
+            left_knee  = self.detector.findAngle(img, 23, 25, 27, lmList, draw=False)
             right_knee = self.detector.findAngle(img, 24, 26, 28, lmList, draw=False)
             knee_angle = (left_knee + right_knee) / 2
-            
-            self.angles = {"hip_angle": hip_angle, "knee_angle": knee_angle}
 
-            if knee_angle > 150:
-                if hip_angle < 100:
-                    is_correct = True
-                    feedback_str = "Perfect Downward Dog!"
-                    form_msg_str = "Press heels down"
-                    progress_val = 100
-                else:
-                    feedback_str = "Push your hips up higher"
-                    progress_val = 60
-            else:
-                feedback_str = "Straighten your legs"
-                progress_val = 30
-
-        # Mountain Pose
-        elif pt == "mountain":
-            # Body straight: knees, hips, and standing tall
-            left_knee = self.detector.findAngle(img, 23, 25, 27, lmList, draw=False)
-            right_knee = self.detector.findAngle(img, 24, 26, 28, lmList, draw=False)
-            knee_angle = (left_knee + right_knee) / 2
-            
-            left_hip = self.detector.findAngle(img, 11, 23, 25, lmList, draw=False)
-            right_hip = self.detector.findAngle(img, 12, 24, 26, lmList, draw=False)
-            hip_angle = (left_hip + right_hip) / 2
-            
-            self.angles = {"knee_angle": knee_angle, "hip_angle": hip_angle}
-            
-            if knee_angle > 160:
-                if hip_angle > 160:
-                    is_correct = True
-                    feedback_str = "Perfect Mountain Pose!"
-                    form_msg_str = "Breathe deeply, stand tall"
-                    progress_val = 100
-                else:
-                    feedback_str = "Straighten your hips and back"
-                    progress_val = 60
-            else:
-                feedback_str = "Straighten your legs"
-                progress_val = 40
-
-        # Cobra Pose
-        elif pt == "cobra":
-            # Lying on stomach, chest lifted
-            # Hips should be somewhat straight but bending back
-            left_hip = self.detector.findAngle(img, 11, 23, 25, lmList, draw=False)
-            right_hip = self.detector.findAngle(img, 12, 24, 26, lmList, draw=False)
-            hip_angle = (left_hip + right_hip) / 2
-            
-            # Arms should be pushing up, elbows somewhat straight or slightly bent
-            left_elbow = self.detector.findAngle(img, 11, 13, 15, lmList, draw=False)
+            # Arms straight: elbow angle (shoulder-elbow-wrist) > 155°
+            left_elbow  = self.detector.findAngle(img, 11, 13, 15, lmList, draw=False)
             right_elbow = self.detector.findAngle(img, 12, 14, 16, lmList, draw=False)
             elbow_angle = (left_elbow + right_elbow) / 2
-            
-            self.angles = {"hip_angle": hip_angle, "elbow_angle": elbow_angle}
-            
-            if elbow_angle > 120:
-                if hip_angle > 140:
-                    is_correct = True
-                    feedback_str = "Perfect Cobra Pose!"
-                    form_msg_str = "Keep shoulders down"
-                    progress_val = 100
-                else:
-                    feedback_str = "Lower your hips to the floor"
-                    progress_val = 70
-            else:
-                feedback_str = "Push up with your arms"
-                progress_val = 40
 
-        # Plank Pose
-        elif pt == "plank":
-            # Body straight, arms supporting
-            left_hip = self.detector.findAngle(img, 11, 23, 25, lmList, draw=False)
-            right_hip = self.detector.findAngle(img, 12, 24, 26, lmList, draw=False)
-            hip_angle = (left_hip + right_hip) / 2
-            
-            left_knee = self.detector.findAngle(img, 23, 25, 27, lmList, draw=False)
+            self.angles = {
+                "hip_angle":   round(hip_angle,1),
+                "knee_angle":  round(knee_angle,1),
+                "elbow_angle": round(elbow_angle,1)
+            }
+
+            if knee_angle > 145:
+                if elbow_angle > 145:
+                    if hip_angle < 110:
+                        is_correct = True
+                        feedback_str = "Perfect Downward Dog!"
+                        form_msg_str = "Push heels toward floor"
+                        progress_val = 100
+                    else:
+                        feedback_str = "Push hips up and back more"
+                        progress_val = 65
+                else:
+                    feedback_str = "Straighten your arms fully"
+                    progress_val = 50
+            else:
+                feedback_str = "Straighten your legs, lift your hips"
+                progress_val = 30
+
+        # ── MOUNTAIN POSE ────────────────────────────────────────────────────────
+        elif pt == "mountain":
+            # Knees straight (>160°)
+            left_knee  = self.detector.findAngle(img, 23, 25, 27, lmList, draw=False)
             right_knee = self.detector.findAngle(img, 24, 26, 28, lmList, draw=False)
             knee_angle = (left_knee + right_knee) / 2
-            
-            self.angles = {"hip_angle": hip_angle, "knee_angle": knee_angle}
-            
-            if knee_angle > 150:
-                if hip_angle > 150 and hip_angle < 190:
+
+            # Hips aligned (>155°)
+            left_hip  = self.detector.findAngle(img, 11, 23, 25, lmList, draw=False)
+            right_hip = self.detector.findAngle(img, 12, 24, 26, lmList, draw=False)
+            hip_angle = (left_hip + right_hip) / 2
+
+            # Shoulders level: shoulder-hip angle
+            left_shoulder  = self.detector.findAngle(img, 13, 11, 23, lmList, draw=False)
+            right_shoulder = self.detector.findAngle(img, 14, 12, 24, lmList, draw=False)
+            shoulder_align = (left_shoulder + right_shoulder) / 2
+
+            self.angles = {
+                "knee_angle":     round(knee_angle,1),
+                "hip_angle":      round(hip_angle,1),
+                "shoulder_align": round(shoulder_align,1)
+            }
+
+            if knee_angle > 155:
+                if hip_angle > 155:
                     is_correct = True
-                    feedback_str = "Perfect Plank Pose!"
-                    form_msg_str = "Engage your core"
+                    feedback_str = "Perfect Mountain Pose!"
+                    form_msg_str = "Breathe, stand tall and rooted"
                     progress_val = 100
                 else:
-                    feedback_str = "Keep your body in a straight line"
-                    progress_val = 70
+                    feedback_str = "Engage your core, stand fully upright"
+                    progress_val = 65
             else:
-                feedback_str = "Straighten your legs"
+                feedback_str = "Straighten both legs completely"
                 progress_val = 40
-                
+
+        # ── COBRA POSE ───────────────────────────────────────────────────────────
+        elif pt == "cobra":
+            # Elbows pushing up: shoulder-elbow-wrist angle (>120° = arms pushing)
+            left_elbow  = self.detector.findAngle(img, 11, 13, 15, lmList, draw=False)
+            right_elbow = self.detector.findAngle(img, 12, 14, 16, lmList, draw=False)
+            elbow_angle = (left_elbow + right_elbow) / 2
+
+            # Back arch: shoulder-hip-knee (hips low)
+            left_hip  = self.detector.findAngle(img, 11, 23, 25, lmList, draw=False)
+            right_hip = self.detector.findAngle(img, 12, 24, 26, lmList, draw=False)
+            hip_angle = (left_hip + right_hip) / 2
+
+            # Shoulder open: elbow-shoulder-hip angle
+            left_shoulder_open  = self.detector.findAngle(img, 13, 11, 23, lmList, draw=False)
+            right_shoulder_open = self.detector.findAngle(img, 14, 12, 24, lmList, draw=False)
+            shoulder_open = (left_shoulder_open + right_shoulder_open) / 2
+
+            self.angles = {
+                "elbow_angle":   round(elbow_angle,1),
+                "hip_angle":     round(hip_angle,1),
+                "shoulder_open": round(shoulder_open,1)
+            }
+
+            if elbow_angle > 110:
+                if hip_angle > 130:
+                    is_correct = True
+                    feedback_str = "Perfect Cobra Pose!"
+                    form_msg_str = "Keep shoulders down and back"
+                    progress_val = 100
+                else:
+                    feedback_str = "Lower your hips to the mat, lift your chest"
+                    progress_val = 65
+            else:
+                feedback_str = "Push up through your palms to lift the chest"
+                progress_val = 35
+
+        # ── PLANK POSE ───────────────────────────────────────────────────────────
+        elif pt == "plank":
+            # Body straight: shoulder-hip-knee (should be ~170-190°)
+            left_hip  = self.detector.findAngle(img, 11, 23, 25, lmList, draw=False)
+            right_hip = self.detector.findAngle(img, 12, 24, 26, lmList, draw=False)
+            hip_angle = (left_hip + right_hip) / 2
+
+            # Knees straight (>155°)
+            left_knee  = self.detector.findAngle(img, 23, 25, 27, lmList, draw=False)
+            right_knee = self.detector.findAngle(img, 24, 26, 28, lmList, draw=False)
+            knee_angle = (left_knee + right_knee) / 2
+
+            # Arms straight: elbow angle (>145°)
+            left_elbow  = self.detector.findAngle(img, 11, 13, 15, lmList, draw=False)
+            right_elbow = self.detector.findAngle(img, 12, 14, 16, lmList, draw=False)
+            elbow_angle = (left_elbow + right_elbow) / 2
+
+            self.angles = {
+                "hip_angle":   round(hip_angle,1),
+                "knee_angle":  round(knee_angle,1),
+                "elbow_angle": round(elbow_angle,1)
+            }
+
+            if knee_angle > 150:
+                if elbow_angle > 140:
+                    if 145 < hip_angle < 215:
+                        is_correct = True
+                        feedback_str = "Perfect Plank!"
+                        form_msg_str = "Engage core, squeeze glutes"
+                        progress_val = 100
+                    elif hip_angle >= 215:
+                        feedback_str = "Lower your hips — don't pike up"
+                        progress_val = 65
+                    else:
+                        feedback_str = "Raise your hips — don't sag"
+                        progress_val = 60
+                else:
+                    feedback_str = "Lock out your elbows, arms straight"
+                    progress_val = 50
+            else:
+                feedback_str = "Straighten your legs fully"
+                progress_val = 35
+
         else:
             feedback_str = "Unknown Pose"
             form_msg_str = "Please select a supported pose"
@@ -309,6 +413,9 @@ def process_yoga_video(filepath: str, pose_type: str) -> dict:
     if fps <= 0: fps = 30
     
     frames_processed = 0
+    best_progress = 0
+    best_angles = {}
+    best_feedback = "No valid pose detected"
     
     try:
         while True:
@@ -326,13 +433,14 @@ def process_yoga_video(filepath: str, pose_type: str) -> dict:
             lmList = tracker.detector.findPosition(img, draw=False)
 
             if len(lmList) > 0:
-                # We need to simulate the time delta since `tracker.hold_time` uses real `time.time()`
-                # We will manually calculate hold time based on frames
                 tracker._analyze_pose(img, lmList)
-                # Note: `_analyze_pose` updates `tracker.progress` and sets `tracker.feedback`
-                # If progress == 100, we add a fraction of a second to hold time
                 if tracker.progress == 100:
-                    tracker.hold_time += (1.0 / 10.0) # Assuming we are processing at ~10 fps
+                    tracker.hold_time += (1.0 / (fps / max(1, int(fps/10))))
+                
+                if tracker.progress >= best_progress:
+                    best_progress = tracker.progress
+                    best_angles = getattr(tracker, 'angles', {}).copy()
+                    best_feedback = tracker.form_msg
             else:
                 tracker.progress = 0
     except Exception as e:
@@ -343,5 +451,7 @@ def process_yoga_video(filepath: str, pose_type: str) -> dict:
     return {
         "pose_type": pose_type,
         "hold_time": round(tracker.hold_time, 1),
-        "feedback": f"Video analysis complete. You held perfect {pose_type} form for {round(tracker.hold_time, 1)} seconds."
+        "best_progress": best_progress,
+        "angles": best_angles,
+        "feedback": f"Perfect hold: {round(tracker.hold_time, 1)}s. {best_feedback}" if tracker.hold_time > 0 else best_feedback
     }

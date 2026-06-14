@@ -127,17 +127,15 @@ export default function Yoga() {
         headers: { "Content-Type": "multipart/form-data" }
       });
       
-      setStatus({
-        progress: 100,
-        form_msg: response.data.feedback,
-        feedback: "Analysis Complete",
-        hold_time: response.data.hold_time,
-        angles: {}
-      });
+      setSession(response.data);
+      
+      // Auto-play the video preview so they see it live
+      const vidElem = document.getElementById("uploaded-video-preview");
+      if (vidElem) vidElem.play();
+      
       incrementStreak(); // Streak increments on successful upload analysis
       incrementSessions();
-      addActiveMinutes(Math.max(1, Math.round(response.data.hold_time / 60)));
-      toast.success("Analysis Complete", `You held ${poses.find(p=>p.type === selected)?.label} for ${response.data.hold_time} seconds!`);
+      toast.info("Analysis Started", "Playing video with live form feedback...");
     } catch (error) {
       toast.error("Upload Failed", "Could not analyze the video.");
     } finally {
@@ -360,7 +358,20 @@ export default function Yoga() {
                        </div>
                     )}
                     {videoPreview ? (
-                      <video src={videoPreview} controls className="h-full w-full object-contain rounded-xl" />
+                      <div className="relative w-full h-full">
+                        <video id="uploaded-video-preview" src={videoPreview} controls className="h-full w-full object-contain rounded-xl" />
+                        <button 
+                          onClick={() => {
+                            setVideoFile(null);
+                            setVideoPreview(null);
+                            setStatus(null);
+                          }}
+                          className="absolute top-4 right-4 bg-black/60 hover:bg-rose-500/80 text-white p-2 rounded-full transition z-30"
+                          title="Remove Video"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                        </button>
+                      </div>
                     ) : (
                       <label className="flex flex-col items-center justify-center w-full h-full border-2 border-dashed border-white/10 hover:border-primary-500/50 hover:bg-primary-500/5 rounded-xl cursor-pointer transition">
                         <UploadCloud size={48} className="mb-4 text-slate-400" />
@@ -372,8 +383,8 @@ export default function Yoga() {
                   </div>
                 )}
                 
-                {/* Live Feedback Overlay (Only for live sessions) */}
-                {status && session && !uploadMode && (
+                {/* Live Feedback Overlay (For both live camera and playing video) */}
+                {status && session && (
                    <div className="absolute bottom-6 left-6 right-6">
                      <div className="flex items-center justify-between rounded-2xl bg-black/70 p-4 backdrop-blur-md border border-white/10">
                         <div>

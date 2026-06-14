@@ -1,91 +1,100 @@
 import cv2
 import math
 import numpy as np
+import os
 
-# Try importing mediapipe Solutions (older API)
+# Use the new MediaPipe Tasks API (compatible with mediapipe 0.10+)
 try:
+    from mediapipe.tasks import python as mp_tasks
+    from mediapipe.tasks.python import vision
+    from mediapipe.tasks.python.vision import PoseLandmarker, PoseLandmarkerOptions, RunningMode
     import mediapipe as mp
-    mpPose = mp.solutions.pose
-    mpDraw = mp.solutions.drawing_utils
-    HAS_MP_SOLUTIONS = True
-except AttributeError:
-    HAS_MP_SOLUTIONS = False
+
+    MODEL_PATH = os.path.join(os.path.dirname(__file__), '..', 'pose_landmarker_lite.task')
+    MODEL_PATH = os.path.abspath(MODEL_PATH)
+    HAS_TASKS_API = os.path.exists(MODEL_PATH)
+    if not HAS_TASKS_API:
+        print(f"[pose_module] WARNING: Model not found at {MODEL_PATH}")
+except Exception as e:
+    HAS_TASKS_API = False
+    print(f"[pose_module] WARNING: Could not import MediaPipe Tasks API: {e}")
 
 
 class PoseDetectorModified:
     """
-    Pose detector using MediaPipe that finds pose landmarks and calculates angles.
-    Compatible with both old and new MediaPipe versions.
+    Pose detector using MediaPipe Tasks API (mediapipe >= 0.10).
+    Finds pose landmarks and calculates angles.
     """
 
     def __init__(self, mode=False, complexity=1, smooth_landmarks=True,
                  enable_segmentation=False, smooth_segmentation=True,
                  detectionCon=0.5, trackCon=0.5):
-        """
-        Initialize the pose detector.
-        """
         self.detectionCon = detectionCon
         self.trackCon = trackCon
-        self.results = None
-        self.pose = None
-        
-        if HAS_MP_SOLUTIONS:
+        self._last_result = None
+        self._landmarker = None
+
+        if HAS_TASKS_API:
             try:
-                self.pose = mpPose.Pose(
-                    static_image_mode=mode,
-                    model_complexity=complexity,
-                    smooth_landmarks=smooth_landmarks,
-                    min_detection_confidence=detectionCon,
-                    min_tracking_confidence=trackCon
+                options = PoseLandmarkerOptions(
+                    base_options=mp_tasks.BaseOptions(model_asset_path=MODEL_PATH),
+                    running_mode=RunningMode.IMAGE,
+                    num_poses=1,
+                    min_pose_detection_confidence=detectionCon,
+                    min_pose_presence_confidence=detectionCon,
+                    min_tracking_confidence=trackCon,
                 )
-            except:
-                self.pose = None
+                self._landmarker = PoseLandmarker.create_from_options(options)
+                print("[pose_module] PoseLandmarker (Tasks API) initialized successfully.")
+            except Exception as e:
+                print(f"[pose_module] ERROR creating PoseLandmarker: {e}")
+                self._landmarker = None
 
     def findPose(self, img, draw=True):
-        """Find pose in image."""
-        if self.pose is None:
+        """Find pose in image using new Tasks API."""
+        if self._landmarker is None:
             return img
-            
+
         try:
             imgRGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            self.results = self.pose.process(imgRGB)
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=imgRGB)
+            self._last_result = self._landmarker.detect(mp_image)
 
-            if self.results and self.results.pose_landmarks:
-                if draw and HAS_MP_SOLUTIONS:
-                    # Drawing with white lines and red dots
-                    mpDraw.draw_landmarks(img, self.results.pose_landmarks, 
-                                        mpPose.POSE_CONNECTIONS,
-                                        mpDraw.DrawingSpec(color=(255, 255, 255), thickness=2, circle_radius=2),
-                                        mpDraw.DrawingSpec(color=(0, 0, 255), thickness=2, circle_radius=5))
-        except:
+            if draw and self._last_result and self._last_result.pose_landmarks:
+                h, w = img.shape[:2]
+                for landmark_list in self._last_result.pose_landmarks:
+                    for lm in landmark_list:
+                        cx, cy = int(lm.x * w), int(lm.y * h)
+                        cv2.circle(img, (cx, cy), 5, (0, 0, 255), cv2.FILLED)
+        except Exception as e:
             pass
-        
+
         return img
 
     def findPosition(self, img, draw=True):
-        """Get landmark positions."""
+        """Get landmark positions as list of [id, x, y]."""
         landmarks_list = []
-        
+
         try:
-            if self.results and self.results.pose_landmarks:
-                for id, lm in enumerate(self.results.pose_landmarks.landmark):
-                    h, w, c = img.shape
-                    cx, cy = int(lm.x * w), int(lm.y * h)
-                    landmarks_list.append([id, cx, cy])
-                    if draw:
-                        # Use Red for the circles to match user's project
-                        cv2.circle(img, (cx, cy), 8, (0, 0, 255), cv2.FILLED)
-        except:
+            if self._last_result and self._last_result.pose_landmarks:
+                h, w = img.shape[:2]
+                for landmark_list in self._last_result.pose_landmarks:
+                    for id, lm in enumerate(landmark_list):
+                        cx, cy = int(lm.x * w), int(lm.y * h)
+                        landmarks_list.append([id, cx, cy])
+                        if draw:
+                            cv2.circle(img, (cx, cy), 8, (0, 0, 255), cv2.FILLED)
+        except Exception as e:
             pass
-        
+
         return landmarks_list
 
     def findAngle(self, img, p1, p2, p3, landmarks_list, draw=True):
-        """Calculate angle between three landmarks with matching style."""
+        """Calculate angle between three landmarks."""
         try:
             if len(landmarks_list) <= max(p1, p2, p3):
                 return 0
-                
+
             x1, y1 = landmarks_list[p1][1:]
             x2, y2 = landmarks_list[p2][1:]
             x3, y3 = landmarks_list[p3][1:]
@@ -95,19 +104,14 @@ class PoseDetectorModified:
                 angle += 360
 
             if draw:
-                # White lines, red circles
                 cv2.line(img, (x1, y1), (x2, y2), (255, 255, 255), 3)
                 cv2.line(img, (x3, y3), (x2, y2), (255, 255, 255), 3)
                 cv2.circle(img, (x1, y1), 10, (0, 0, 255), cv2.FILLED)
                 cv2.circle(img, (x2, y2), 10, (0, 0, 255), cv2.FILLED)
                 cv2.circle(img, (x3, y3), 10, (0, 0, 255), cv2.FILLED)
-                cv2.circle(img, (x1, y1), 15, (0, 0, 255), 2)
-                cv2.circle(img, (x2, y2), 15, (0, 0, 255), 2)
-                cv2.circle(img, (x3, y3), 15, (0, 0, 255), 2)
-                cv2.putText(img, str(int(angle)), (x2 - 50, y2 + 50), cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 255), 2)
+                cv2.putText(img, str(int(angle)), (x2 - 50, y2 + 50),
+                            cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 255), 2)
 
             return angle
         except:
             return 0
-
-

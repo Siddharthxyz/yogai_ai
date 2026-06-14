@@ -141,22 +141,32 @@ async def upload_yoga_video(pose_type: str = Form(...), video: UploadFile = File
         raise HTTPException(status_code=400, detail="A video file must be provided.")
         
     try:
-        # Create a temporary file to save the uploaded video
-        fd, temp_path = tempfile.mkstemp(suffix=".mp4")
+        ext = os.path.splitext(video.filename)[1]
+        if not ext:
+            ext = ".mp4"
+            
+        fd, temp_path = tempfile.mkstemp(suffix=ext)
         with os.fdopen(fd, 'wb') as f:
             content = await video.read()
             f.write(content)
             
-        # Process the video offline
-        result = process_yoga_video(temp_path, pose_type)
+        tracker = LiveYogaTracker(pose_type=pose_type, source=temp_path)
         
-        # Cleanup
-        os.remove(temp_path)
+        # Monkey-patch stop to clean up the temp file
+        original_stop = tracker.stop
+        def new_stop():
+            original_stop()
+            try:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+            except:
+                pass
+        tracker.stop = new_stop
         
-        if "error" in result:
-            raise HTTPException(status_code=500, detail=result["error"])
-            
-        return result
+        live_yoga_sessions[tracker.session_id] = tracker
+        tracker.start()
+        
+        return {"status": "started", "session_id": tracker.session_id, "pose_type": pose_type}
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
