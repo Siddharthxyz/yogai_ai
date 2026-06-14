@@ -4,7 +4,6 @@ import os
 import numpy as np
 import os
 
-<<<<<<< HEAD
 # ──────────────────────────────────────────────────────────────────────────────
 # MediaPipe backend selection
 # MediaPipe ≥0.10 dropped mp.solutions.pose in favour of the Tasks API.
@@ -14,16 +13,13 @@ import os
 HAS_MP_SOLUTIONS = False  # legacy API flag (kept for compatibility)
 _USE_TASKS = False         # whether the new Tasks API is active
 
-=======
 # Use the new MediaPipe Tasks API (compatible with mediapipe 0.10+)
->>>>>>> 94a6e51160401dbcb2d1038c248024fdb7983632
 try:
     from mediapipe.tasks import python as mp_tasks
     from mediapipe.tasks.python import vision
     from mediapipe.tasks.python.vision import PoseLandmarker, PoseLandmarkerOptions, RunningMode
     import mediapipe as mp
 
-<<<<<<< HEAD
     # ── Try new Tasks API (mediapipe ≥ 0.10) ──────────────────────────────────
     from mediapipe.tasks import python as _mp_python
     from mediapipe.tasks.python import vision as _mp_vision
@@ -63,7 +59,6 @@ except Exception as _e:
 # 0=nose, 11=left_shoulder, 12=right_shoulder, 13=left_elbow, 14=right_elbow,
 # 15=left_wrist, 16=right_wrist, 23=left_hip, 24=right_hip,
 # 25=left_knee, 26=right_knee, 27=left_ankle, 28=right_ankle
-=======
     MODEL_PATH = os.path.join(os.path.dirname(__file__), '..', 'pose_landmarker_lite.task')
     MODEL_PATH = os.path.abspath(MODEL_PATH)
     HAS_TASKS_API = os.path.exists(MODEL_PATH)
@@ -72,25 +67,20 @@ except Exception as _e:
 except Exception as e:
     HAS_TASKS_API = False
     print(f"[pose_module] WARNING: Could not import MediaPipe Tasks API: {e}")
->>>>>>> 94a6e51160401dbcb2d1038c248024fdb7983632
 
 
 class PoseDetectorModified:
     """
-<<<<<<< HEAD
     Unified pose detector that works with both:
       • MediaPipe Tasks API  (mediapipe ≥ 0.10, uses pose_landmarker_lite.task)
       • Legacy mp.solutions  (mediapipe < 0.10)
-=======
     Pose detector using MediaPipe Tasks API (mediapipe >= 0.10).
     Finds pose landmarks and calculates angles.
->>>>>>> 94a6e51160401dbcb2d1038c248024fdb7983632
     """
 
     def __init__(self, mode=False, complexity=1, smooth_landmarks=True,
                  enable_segmentation=False, smooth_segmentation=True,
                  detectionCon=0.5, trackCon=0.5):
-<<<<<<< HEAD
 
         self._results = None          # last raw mediapipe result
         self._landmarks_cache = []    # last landmark list
@@ -132,7 +122,6 @@ class PoseDetectorModified:
             self._results = self._run_tasks(img)
         else:
             self._results = self._run_solutions(img, draw)
-=======
         self.detectionCon = detectionCon
         self.trackCon = trackCon
         self._last_result = None
@@ -172,12 +161,10 @@ class PoseDetectorModified:
                         cv2.circle(img, (cx, cy), 5, (0, 0, 255), cv2.FILLED)
         except Exception as e:
             pass
->>>>>>> 94a6e51160401dbcb2d1038c248024fdb7983632
 
         return img
 
     def findPosition(self, img, draw=True):
-<<<<<<< HEAD
         """Return list of [id, cx, cy] for every landmark."""
         if self._landmarks_cache:
             return self._landmarks_cache
@@ -210,7 +197,6 @@ class PoseDetectorModified:
         try:
             if len(landmarks_list) <= max(p1, p2, p3):
                 return 0
-=======
         """Get landmark positions as list of [id, x, y]."""
         landmarks_list = []
 
@@ -237,7 +223,6 @@ class PoseDetectorModified:
             x1, y1 = landmarks_list[p1][1:]
             x2, y2 = landmarks_list[p2][1:]
             x3, y3 = landmarks_list[p3][1:]
->>>>>>> 94a6e51160401dbcb2d1038c248024fdb7983632
 
             x1, y1 = landmarks_list[p1][1], landmarks_list[p1][2]
             x2, y2 = landmarks_list[p2][1], landmarks_list[p2][2]
@@ -252,22 +237,18 @@ class PoseDetectorModified:
             if draw:
                 cv2.line(img, (x1, y1), (x2, y2), (255, 255, 255), 3)
                 cv2.line(img, (x3, y3), (x2, y2), (255, 255, 255), 3)
-<<<<<<< HEAD
                 for pt in [(x1, y1), (x2, y2), (x3, y3)]:
                     cv2.circle(img, pt, 10, (0, 0, 255), cv2.FILLED)
                     cv2.circle(img, pt, 15, (0, 0, 255), 2)
-=======
                 cv2.circle(img, (x1, y1), 10, (0, 0, 255), cv2.FILLED)
                 cv2.circle(img, (x2, y2), 10, (0, 0, 255), cv2.FILLED)
                 cv2.circle(img, (x3, y3), 10, (0, 0, 255), cv2.FILLED)
->>>>>>> 94a6e51160401dbcb2d1038c248024fdb7983632
                 cv2.putText(img, str(int(angle)), (x2 - 50, y2 + 50),
                             cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 255), 2)
 
             return angle
         except Exception:
             return 0
-<<<<<<< HEAD
 
     # ── private helpers ────────────────────────────────────────────────────────
 
@@ -295,5 +276,3 @@ class PoseDetectorModified:
             return results
         except Exception:
             return None
-=======
->>>>>>> 94a6e51160401dbcb2d1038c248024fdb7983632
