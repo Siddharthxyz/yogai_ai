@@ -27,6 +27,7 @@ recipe_service = RecipeService()
 # ─── Request models ───────────────────────────────────────────────────────────
 class ChatMessage(BaseModel):
     message: str
+    context: str = ""
 
 
 class ChatbotQuery(BaseModel):
@@ -35,6 +36,7 @@ class ChatbotQuery(BaseModel):
 
 class RecipeRequest(BaseModel):
     ingredients: List[str]
+    context: str = ""
 
 
 # ─── Original endpoints ───────────────────────────────────────────────────────
@@ -47,7 +49,7 @@ async def handle_chat(msg: ChatMessage):
             detail="Request JSON must include a 'message' field."
         )
     intent = detect_intent(msg.message)
-    response = recipe_service.respond(msg.message, intent=intent)
+    response = recipe_service.respond(msg.message, intent=intent, user_context=msg.context)
     return response
 
 
@@ -70,7 +72,7 @@ async def generate_recipe(request: RecipeRequest):
     """Generate a recipe from a list of ingredient names (via Groq LLM)."""
     if not request.ingredients:
         raise HTTPException(status_code=400, detail="No ingredients provided.")
-    return recipe_service.generate_recipe(request.ingredients)
+    return recipe_service.generate_recipe(request.ingredients, request.context)
 
 
 @chat_bp.get("/recipes/status")

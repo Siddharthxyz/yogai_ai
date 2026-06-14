@@ -1,404 +1,208 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Activity,
-  BrainCircuit,
   ChefHat,
   Dumbbell,
-  Flame,
-  Sparkles,
   TrendingUp,
   Wind,
   Zap,
+  ChevronRight
 } from "lucide-react";
 import api from "../services/api";
-import { motion } from "framer-motion";
-import { Button, Card, FadeIn, MetricBox, ProgressPill, cn } from "../components/ui";
+import { FadeIn, Button, cn } from "../components/ui";
+import { useAuth } from "../context/AuthContext";
+import { useStats } from "../context/StatsContext";
+import { useSearch } from "../components/MainLayout";
 
-const features = [
+const ALL_MODULES = [
   {
-    to: "/yoga",
-    title: "Yoga Pose Monitor",
-    description: "Alignment correction with AI pose analysis and flow history.",
+    id: "yoga",
+    title: "Yoga Flow",
+    desc: "AI-powered alignment correction and live pose analysis. Master your form safely.",
     icon: Wind,
-    tone: "indigo",
+    link: "/yoga",
+    shadow: "hover:shadow-[0_20px_60px_-15px_rgba(99,102,241,0.4)]",
+    iconBg: "bg-indigo-500/20",
+    iconColor: "text-indigo-400",
+    textColor: "text-indigo-400 group-hover:text-indigo-300",
   },
   {
-    to: "/recipe",
-    title: "AI Kitchen Hub",
-    description: "Recipe generation from ingredients, scans, and chat prompts.",
+    id: "recipe",
+    title: "AI Kitchen",
+    desc: "Snap a photo of your fridge. Let the LLM generate a personalized, macro-friendly recipe.",
     icon: ChefHat,
-    tone: "emerald",
+    link: "/recipe",
+    shadow: "hover:shadow-[0_20px_60px_-15px_rgba(16,185,129,0.4)]",
+    iconBg: "bg-emerald-500/20",
+    iconColor: "text-emerald-400",
+    textColor: "text-emerald-400 group-hover:text-emerald-300",
   },
   {
-    to: "/exercise",
-    title: "Metric Counter",
-    description: "Rep tracking, form hints, and live exercise session metrics.",
+    id: "exercise",
+    title: "Exercise AI",
+    desc: "Live rep tracking and form validation. Push your limits with an AI spotter.",
     icon: Dumbbell,
-    tone: "rose",
+    link: "/exercise",
+    shadow: "hover:shadow-[0_20px_60px_-15px_rgba(244,63,94,0.4)]",
+    iconBg: "bg-rose-500/20",
+    iconColor: "text-rose-400",
+    textColor: "text-rose-400 group-hover:text-rose-300",
   },
 ];
 
-const spotlightMetrics = [
-  {
-    label: "Metabolic Load",
-    value: "Balanced",
-    delta: "Recovery window looks strong for a yoga + strength split.",
-    icon: Sparkles,
-    tone: "emerald",
-  },
-  {
-    label: "Adaptive Guidance",
-    value: "3 AI prompts ready",
-    delta: "Suggested next actions for flow, food, and exercise.",
-    icon: BrainCircuit,
-    tone: "indigo",
-  },
+const ALL_BIOMETRICS = [
+  { label: "Hydration",     statKey: "hydration",     unit: "L",  icon: Activity,   color: "text-cyan-400",    bg: "bg-cyan-500/10"    },
+  { label: "Recovery Score",statKey: "recovery",      unit: "%",  icon: Zap,         color: "text-amber-400",   bg: "bg-amber-500/10"   },
+  { label: "Goal Accuracy", statKey: "goalAccuracy",  unit: "%",  icon: TrendingUp,  color: "text-primary-400", bg: "bg-primary-500/10" },
 ];
 
-const weeklyInsights = [
-  { label: "Movement quality", value: "Excellent" },
-  { label: "Kitchen adherence", value: "Strong" },
-  { label: "Training output", value: "Rising" },
-  { label: "Goal alignment", value: "On track" },
-];
-
-export default function Dashboard({ searchQuery = "" }) {
+export default function Dashboard() {
+  const { user }   = useAuth();
+  const { stats }  = useStats();
+  const navigate   = useNavigate();
+  const search     = useSearch().trim().toLowerCase();
+  const firstName  = user?.name ? user.name.split(" ")[0] : "Yogi";
   const [status, setStatus] = useState("checking");
-  const [lastUpdated, setLastUpdated] = useState(0);
-  const [stats, setStats] = useState({
-    streak: 18,
-    activeMinutes: 64,
-    goalAccuracy: "96%",
-    calories: "1,284 kcal",
-    focus: "88%",
-    hydration: "2.8L",
-    recovery: "91",
-    weeklyPerformance: 84,
-  });
 
-  const hour = new Date().getHours();
-  const greeting = hour < 12 ? "Good morning, Siddharth" : hour < 17 ? "Good afternoon, Siddharth" : "Good evening, Siddharth";
+  const hour     = new Date().getHours();
+  const greeting = hour < 12 ? `Good morning, ${firstName}` : hour < 17 ? `Good afternoon, ${firstName}` : `Good evening, ${firstName}`;
 
   useEffect(() => {
-    const idleSim = setInterval(() => {
-      setLastUpdated((prev) => prev + 2);
-      if (Math.random() > 0.6) {
-        setStats((prev) => {
-          const calNum = parseInt(prev.calories.replace(/\D/g, "")) + Math.floor(Math.random() * 3);
-          const focusNum = Math.min(99, parseInt(prev.focus) + (Math.random() > 0.5 ? 1 : -1));
-          return {
-            ...prev,
-            calories: `${calNum.toLocaleString()} kcal`,
-            focus: `${focusNum}%`,
-          };
-        });
-      }
-    }, 2000);
-
-    api
-      .get("/status")
-      .then(() => setStatus("online"))
-      .catch(() => setStatus("offline"));
-
-    return () => clearInterval(idleSim);
+    api.get("/status").then(() => setStatus("online")).catch(() => setStatus("offline"));
   }, []);
 
-  const query = searchQuery.trim().toLowerCase();
-  const matches = (...values) =>
-    !query || values.some((value) => String(value).toLowerCase().includes(query));
+  // Filter modules and biometrics based on whatever the user typed in the search bar
+  const modules    = search
+    ? ALL_MODULES.filter(m => m.title.toLowerCase().includes(search) || m.desc.toLowerCase().includes(search))
+    : ALL_MODULES;
 
-  const filteredFeatures = features.filter((feature) =>
-    matches(feature.title, feature.description, "workspace")
-  );
-
-  const statPills = [
-    { label: "Day Streak", value: stats.streak },
-    { label: "Active Minutes", value: `${stats.activeMinutes} min` },
-    { label: "Goal Accuracy", value: stats.goalAccuracy },
-  ].filter((item) => matches(item.label, item.value));
-
-  const filteredSpotlightMetrics = spotlightMetrics.filter((item) =>
-    matches(item.label, item.value, item.delta)
-  );
-
-  const biometrics = [
-    {
-      label: "Calories Burned",
-      value: stats.calories,
-      delta: "+12% compared to last week",
-      icon: Flame,
-      tone: "rose",
-    },
-    {
-      label: "Neural Focus",
-      value: stats.focus,
-      delta: "Flow tracking suggests high attention recovery.",
-      icon: BrainCircuit,
-      tone: "indigo",
-    },
-    {
-      label: "Hydration",
-      value: stats.hydration,
-      delta: "0.7L left to hit your hydration target.",
-      icon: Activity,
-      tone: "emerald",
-    },
-    {
-      label: "Recovery Score",
-      value: stats.recovery,
-      delta: "HRV and mobility windows are both trending upward.",
-      icon: Zap,
-      tone: "amber",
-    },
-  ].filter((item) => matches(item.label, item.value, item.delta));
-
-  const filteredWeeklyInsights = weeklyInsights.filter((item) =>
-    matches(item.label, item.value, "Weekly Performance", `${stats.weeklyPerformance}%`)
-  );
-
-  const showHero = matches(
-    "Neural Performance",
-    "Monitor your entire wellness stack from one premium cockpit: posture quality, nutrition intelligence, and training output.",
-    status === "online" ? "Neural Core Online" : "Backend Offline",
-    "Initialize Routine"
-  );
-
-  const showBiometricsSection = matches("Daily Biometrics") || biometrics.length > 0;
-  const showWeeklyPerformance =
-    matches("Weekly Performance", `${stats.weeklyPerformance}%`, "Weekly Score") ||
-    filteredWeeklyInsights.length > 0;
-  const hasResults =
-    showHero ||
-    filteredFeatures.length > 0 ||
-    showBiometricsSection ||
-    showWeeklyPerformance;
+  const biometrics = search
+    ? ALL_BIOMETRICS.filter(b => b.label.toLowerCase().includes(search))
+    : ALL_BIOMETRICS;
 
   return (
-    <div className="space-y-8">
-      {!hasResults ? (
-        <FadeIn>
-          <Card glow="indigo">
-            <div className="space-y-3">
-              <p className="section-label">No Search Results</p>
-              <h2 className="text-3xl font-semibold text-white">Nothing matched "{searchQuery}"</h2>
-              <p className="max-w-2xl text-sm leading-6 text-slate-400">
-                Try metric names like calories, hydration, recovery, yoga, focus, or weekly.
-              </p>
-            </div>
-          </Card>
-        </FadeIn>
-      ) : null}
+    <div className="space-y-8 pb-12">
+      {/* ── Premium Hero Banner ── */}
+      <FadeIn>
+        <div className="relative overflow-hidden rounded-[2.5rem] bg-slate-900 shadow-2xl">
+          {/* Aurora gradient background */}
+          <div className="absolute inset-0">
+            <img
+              src="/assets/zen_garden.png"
+              alt="Zen Garden"
+              className="h-full w-full object-cover opacity-40 mix-blend-overlay"
+            />
+            <div className="absolute inset-0 bg-gradient-to-r from-indigo-600/80 via-purple-600/70 to-emerald-500/60 mix-blend-multiply"></div>
+            <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/40 to-transparent"></div>
+          </div>
 
-      {showHero ? (
-        <FadeIn>
-          <Card className="overflow-hidden" glow="indigo">
-            <div className="grid gap-8 lg:grid-cols-[1.35fr_0.9fr]">
-              <div>
-                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/6 px-3 py-1 text-xs uppercase tracking-[0.24em] text-slate-300">
-                  <motion.span
-                    animate={status === "online" ? { scale: [1, 1.2, 1], opacity: [0.7, 1, 0.7] } : {}}
-                    transition={{ duration: 2, repeat: Infinity }}
-                    className={cn(
-                      "h-2 w-2 rounded-full",
-                      status === "online" ? "bg-emerald-300 shadow-[0_0_8px_rgba(110,231,183,0.8)]" : "bg-rose-300"
-                    )}
-                  />
-                  {status === "online" ? "Neural Core Online" : "Backend Offline"}
-                </div>
-                <h1 className="mt-6 text-4xl font-semibold tracking-tight text-white sm:text-5xl">
-                  {greeting}
-                </h1>
-                <p className="mt-4 max-w-2xl text-base leading-7 text-slate-300">
-                  Monitor your entire wellness stack from one premium cockpit:
-                  posture quality, nutrition intelligence, and training output.
-                </p>
-
-                {statPills.length > 0 ? (
-                  <div className="mt-8 grid gap-4 sm:grid-cols-3">
-                    {statPills.map((item) => (
-                      <ProgressPill key={item.label} label={item.label} value={item.value} />
-                    ))}
-                  </div>
-                ) : null}
-
-                <div className="mt-8 space-y-6">
-                  <Button>Start Today’s Session</Button>
-                  
-                  <div className="relative overflow-hidden rounded-2xl border border-indigo-500/20 bg-indigo-500/10 p-5 backdrop-blur-md">
-                    <motion.div
-                      className="absolute inset-0 rounded-2xl border-2 border-indigo-400/30"
-                      animate={{ opacity: [0.3, 0.8, 0.3], scale: [0.99, 1.01, 0.99] }}
-                      transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-                    />
-                    <div className="relative z-10 flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <Sparkles className="text-indigo-400" size={18} />
-                        <h3 className="text-sm font-semibold text-white">AI Insight</h3>
-                      </div>
-                      <span className="text-[10px] uppercase tracking-[0.2em] text-indigo-300/70 font-mono">
-                        Updated {lastUpdated}s ago
-                      </span>
-                    </div>
-                    <p className="relative z-10 mt-2 text-sm text-slate-300 flex items-center flex-wrap gap-1">
-                      <span>You're slightly under-hydrated today. Drink 700ml in next 2 hours.</span>
-                      <motion.span
-                        animate={{ opacity: [1, 0, 1] }}
-                        transition={{ duration: 1, repeat: Infinity, ease: "steps(2)" }}
-                        className="inline-block h-3.5 w-1.5 bg-indigo-400"
-                      />
-                    </p>
-                  </div>
-                </div>
+          <div className="relative z-10 p-8 sm:p-12 lg:p-16 flex flex-col md:flex-row items-center justify-between gap-8">
+            <div className="max-w-2xl">
+              <div className="inline-flex items-center gap-2 rounded-full bg-black/30 backdrop-blur-md px-3 py-1.5 text-xs font-semibold tracking-widest text-emerald-300 uppercase border border-white/10 mb-6">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                Neural Core {status === "online" ? "Online" : "Offline"}
               </div>
 
-              {filteredSpotlightMetrics.length > 0 ? (
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-                  {filteredSpotlightMetrics.map((item) => (
-                    <MetricBox
-                      key={item.label}
-                      label={item.label}
-                      value={item.value}
-                      delta={item.delta}
-                      icon={item.icon}
-                      tone={item.tone}
-                    />
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          </Card>
-        </FadeIn>
-      ) : null}
+              <h1 className="text-4xl font-bold tracking-tight text-white sm:text-6xl mb-4">{greeting}</h1>
+              <p className="text-lg text-slate-200/90 leading-relaxed max-w-xl">
+                Your neural wellness sanctuary is ready. You have a <strong className="text-white">{stats.activeMinutes} min</strong> active window today.
+              </p>
 
-      {filteredFeatures.length > 0 ? (
-        <div className="grid gap-5 xl:grid-cols-3">
-          {filteredFeatures.map((feature, index) => (
-          <FadeIn key={feature.title} delay={0.08 * (index + 1)}>
-            <Link to={feature.to} className="block h-full">
-              <Card
-                className="h-full transition duration-300 hover:-translate-y-1"
-                glow={feature.tone}
-              >
-                <div className="flex h-full flex-col">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/8 text-white">
-                    <feature.icon size={22} />
+              <div className="mt-8 flex flex-wrap items-center gap-4">
+                <Button onClick={() => navigate("/yoga")} className="bg-white text-slate-900 hover:bg-slate-100 border-none shadow-[0_0_40px_rgba(255,255,255,0.3)] rounded-full px-8 py-4 text-base">
+                  Start Daily Flow <ChevronRight size={18} className="ml-1" />
+                </Button>
+              </div>
+            </div>
+
+            {/* Quick Stats */}
+            <div className="grid grid-cols-2 gap-4 w-full md:w-auto min-w-[300px]">
+              <div className="bg-black/20 backdrop-blur-xl border border-white/10 rounded-3xl p-5">
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Day Streak</p>
+                <p className="text-3xl font-black text-white">{stats.streak} <span className="text-lg text-slate-400 font-medium tracking-normal">days</span></p>
+              </div>
+              <div className="bg-black/20 backdrop-blur-xl border border-white/10 rounded-3xl p-5">
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Focus Score</p>
+                <p className="text-3xl font-black text-white">{stats.focus}<span className="text-lg text-slate-400 font-medium tracking-normal">%</span></p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </FadeIn>
+
+      {/* ── Bento Grid (search-filtered) ── */}
+      {modules.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {modules.map((m, i) => (
+            <FadeIn delay={0.1 + i * 0.1} key={m.id}>
+              <Link to={m.link} className="block h-full group">
+                <div className={`relative h-full overflow-hidden rounded-[2rem] bg-gradient-to-br from-slate-800 to-slate-900 border border-white/5 p-8 transition-all duration-500 ${m.shadow} hover:-translate-y-1`}>
+                  <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-opacity duration-500 transform group-hover:scale-110">
+                    <m.icon size={120} />
                   </div>
-                  <h2 className="mt-6 text-2xl font-semibold text-white">
-                    {feature.title}
-                  </h2>
-                  <p className="mt-3 text-sm leading-6 text-slate-400">
-                    {feature.description}
-                  </p>
-                  <div className="mt-auto pt-8 text-sm font-semibold text-primary-200">
-                    Open workspace
+                  <div className="relative z-10 flex flex-col h-full">
+                    <div className={`flex h-14 w-14 items-center justify-center rounded-2xl ${m.iconBg} ${m.iconColor} mb-6`}>
+                      <m.icon size={28} />
+                    </div>
+                    <h2 className="text-2xl font-bold text-white mb-3">{m.title}</h2>
+                    <p className="text-slate-400 leading-relaxed mb-8 flex-1">{m.desc}</p>
+                    <div className={`flex items-center text-sm font-bold ${m.textColor} transition-colors`}>
+                      Open Workspace <ChevronRight size={16} className="ml-1 group-hover:translate-x-1 transition-transform" />
+                    </div>
                   </div>
                 </div>
-              </Card>
-            </Link>
-          </FadeIn>
+              </Link>
+            </FadeIn>
           ))}
         </div>
-      ) : null}
+      ) : (
+        search && (
+          <p className="text-center text-slate-500 py-6">No modules match &ldquo;{search}&rdquo;</p>
+        )
+      )}
 
-      {showBiometricsSection || showWeeklyPerformance ? (
-        <div className="grid gap-6 xl:grid-cols-[1.5fr_0.8fr]">
-          {showBiometricsSection ? (
-            <FadeIn delay={0.16}>
-              <div className="space-y-4">
-                <div className="flex items-center gap-3">
-                  <TrendingUp className="text-primary-200" size={20} />
-                  <h2 className="text-2xl font-semibold text-white">Daily Biometrics</h2>
-                </div>
-                {biometrics.length > 0 ? (
-                  <div className="grid gap-5 md:grid-cols-2">
-                    {biometrics.map((item) => (
-                      <MetricBox
-                        key={item.label}
-                        label={item.label}
-                        value={item.value}
-                        delta={item.delta}
-                        icon={item.icon}
-                        tone={item.tone}
-                      />
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            </FadeIn>
-          ) : null}
-
-          {showWeeklyPerformance ? (
-            <FadeIn delay={0.22}>
-              <Card className="h-full" glow="emerald">
-                <p className="section-label">Weekly Performance</p>
-                <div className="mt-8 flex items-center justify-center">
-                  <DonutChart value={stats.weeklyPerformance} />
-                </div>
-                {filteredWeeklyInsights.length > 0 ? (
-                  <div className="mt-8 grid gap-3">
-                    {filteredWeeklyInsights.map((item) => (
-                      <InsightRow key={item.label} label={item.label} value={item.value} />
-                    ))}
-                  </div>
-                ) : null}
-              </Card>
-            </FadeIn>
-          ) : null}
-        </div>
-      ) : null}
+      {/* ── Daily Biometrics (search-filtered) ── */}
+      {biometrics.length > 0 && (
+        <FadeIn delay={0.4}>
+          <div className="mt-8">
+            <div className="flex items-center justify-between mb-6 px-2">
+              <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+                <Activity className="text-primary-400" /> Daily Biometrics
+              </h2>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {biometrics.map((b) => (
+                <BiometricCard
+                  key={b.label}
+                  label={b.label}
+                  value={`${stats[b.statKey]}${b.unit}`}
+                  icon={b.icon}
+                  color={b.color}
+                  bg={b.bg}
+                />
+              ))}
+            </div>
+          </div>
+        </FadeIn>
+      )}
     </div>
   );
 }
 
-function DonutChart({ value }) {
-  const circumference = 2 * Math.PI * 74;
-  const offset = circumference - (value / 100) * circumference;
-
+function BiometricCard({ label, value, icon: Icon, color, bg }) {
   return (
-    <div className="relative h-52 w-52">
-      <svg className="h-full w-full -rotate-90" viewBox="0 0 180 180">
-        <circle
-          cx="90"
-          cy="90"
-          r="74"
-          fill="none"
-          stroke="rgba(148,163,184,0.14)"
-          strokeWidth="14"
-        />
-        <circle
-          cx="90"
-          cy="90"
-          r="74"
-          fill="none"
-          stroke="url(#yogai-gradient)"
-          strokeWidth="14"
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-        />
-        <defs>
-          <linearGradient id="yogai-gradient" x1="0%" x2="100%">
-            <stop offset="0%" stopColor="#7dd3fc" />
-            <stop offset="100%" stopColor="#60a5fa" />
-          </linearGradient>
-        </defs>
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <p className="text-4xl font-semibold text-white">{value}%</p>
-        <p className="mt-2 text-xs uppercase tracking-[0.24em] text-slate-400">
-          Weekly Score
-        </p>
+    <div className="flex items-center gap-5 rounded-[2rem] bg-slate-900 border border-white/5 p-6 transition-transform hover:-translate-y-1">
+      <div className={cn("flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl", bg, color)}>
+        <Icon size={28} />
       </div>
-    </div>
-  );
-}
-
-function InsightRow({ label, value }) {
-  return (
-    <div className="flex items-center justify-between rounded-2xl border border-white/8 bg-white/5 px-4 py-3">
-      <span className="text-sm text-slate-400">{label}</span>
-      <span className="text-sm font-semibold text-white">{value}</span>
+      <div>
+        <p className="text-sm font-bold text-slate-500 uppercase tracking-wide mb-1">{label}</p>
+        <p className="text-3xl font-black text-white">{value}</p>
+      </div>
     </div>
   );
 }

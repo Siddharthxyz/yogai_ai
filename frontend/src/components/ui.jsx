@@ -6,7 +6,7 @@ export function cn(...inputs) {
   return twMerge(clsx(inputs));
 }
 
-export function Card({ className, glow = "indigo", children }) {
+export function Card({ id, className, glow = "indigo", children }) {
   const glowMap = {
     indigo: "from-primary-500/18 via-sky-400/8 to-transparent",
     emerald: "from-emerald-400/18 via-primary-500/8 to-transparent",
@@ -16,17 +16,19 @@ export function Card({ className, glow = "indigo", children }) {
 
   return (
     <motion.div
+      id={id}
       initial={{ scale: 1 }}
-      animate={{ scale: [1, 1.006, 1] }}
+      animate={{ scale: [1, 1.002, 1] }}
       transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
+      whileHover={{ scale: 1.01, boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)" }}
       className={cn(
-        "glass-panel relative overflow-hidden rounded-3xl border border-white/10 p-6 shadow-soft sm:p-8",
+        "glass-panel relative overflow-hidden rounded-3xl border border-white/10 p-6 shadow-soft sm:p-8 backdrop-blur-2xl transition-all duration-300",
         className
       )}
     >
       <div
         className={cn(
-          "pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-br opacity-80 blur-2xl transition-opacity duration-700",
+          "pointer-events-none absolute inset-x-0 top-0 h-32 bg-gradient-to-br opacity-90 blur-[40px] transition-opacity duration-700",
           glowMap[glow]
         )}
       />
@@ -55,13 +57,14 @@ export function Button({
       whileHover={{ scale: 1.02 }}
       whileTap={{ scale: 0.95 }}
       className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-semibold transition-colors duration-300 disabled:cursor-not-allowed disabled:opacity-60",
+        "relative inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-bold tracking-wide transition-all duration-300 disabled:cursor-not-allowed disabled:opacity-60 overflow-hidden",
         variants[variant],
         className
       )}
       {...props}
     >
-      {children}
+      <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out" />
+      <span className="relative z-10 flex items-center gap-2">{children}</span>
     </motion.button>
   );
 }

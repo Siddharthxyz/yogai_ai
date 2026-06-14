@@ -1,11 +1,14 @@
+import { AuthProvider } from "./context/AuthContext";
+import { StatsProvider } from "./context/StatsContext";
 import AppRoutes from "./routes";
-import MainLayout from "./components/MainLayout";
 
 function App() {
   return (
-    <MainLayout>
-      <AppRoutes />
-    </MainLayout>
+    <AuthProvider>
+      <StatsProvider>
+        <AppRoutes />
+      </StatsProvider>
+    </AuthProvider>
   );
 }
 

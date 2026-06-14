@@ -1,8 +1,8 @@
 """
-Exercise Service (Live Threaded Version - Hardcoded Native Script Logic)
+Exercise Service (Video File Version)
 ========================================
-Provides a way to start a background thread that tracks exercise reps using the server's webcam.
-Endpoints call start, status, and stop to manage these threads.
+Provides exercise tracking from video files stored on the server.
+Each exercise counter runs on a separate video file source.
 
 Supported exercises: bicep_curl, pushup, squat, deadlift, pullup
 """
@@ -11,7 +11,7 @@ import uuid
 import logging
 import threading
 import time
-from typing import Dict, Optional
+from typing import Dict
 import cv2
 import numpy as np
 
@@ -19,11 +19,13 @@ from services.pose_module import PoseDetectorModified
 
 logger = logging.getLogger(__name__)
 
-class LiveExerciseTracker:
-    def __init__(self, exercise_type: str, source: str = "0"):
+class VideoExerciseTracker:
+    """Tracks exercises from a video file (MP4, AVI, etc.)"""
+    
+    def __init__(self, exercise_type: str, video_path: str):
         self.session_id = str(uuid.uuid4())
         self.exercise_type = exercise_type
-        self.source = int(source) if source.isdigit() else source
+        self.video_path = video_path  # Path to video file
         self.detector = PoseDetectorModified()
         
         self.counter = 0.0
@@ -44,150 +46,141 @@ class LiveExerciseTracker:
         self.start_time = time.time()
         self.thread = threading.Thread(target=self._run_loop, daemon=True)
         self.thread.start()
-        logger.info(f"Started exercise tracker session {self.session_id} for {self.exercise_type} source {self.source}")
+        logger.info(f"Started video exercise tracker session {self.session_id} for {self.exercise_type} from {self.video_path}")
 
     def stop(self):
         self.is_running = False
         if self.thread:
             self.thread.join(timeout=2)
-        logger.info(f"Stopped session {self.session_id}")
+        logger.info(f"Stopped video session {self.session_id}")
 
     def _run_loop(self):
-        cap = cv2.VideoCapture(self.source)
+        cap = cv2.VideoCapture(self.video_path)
         if not cap.isOpened():
-            self.form_msg = f"Error: Source {self.source} not found"
+            self.form_msg = f"Error: Video {self.video_path} not found"
             self.is_running = False
             return
 
         fps = cap.get(cv2.CAP_PROP_FPS)
-        frame_delay = 0.03 # Default to ~30 FPS if cap fails to provide FPS
-
-        logger.info(f"Loop started for {self.exercise_type}")
+        logger.info(f"Video loop started for {self.exercise_type} at {fps} FPS")
 
         while self.is_running:
             success, frame = cap.read()
             if not success:
-                if isinstance(self.source, str):
-                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    continue
-                break
+                # Loop video if it ends
+                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                continue
 
             frame = self.detector.findPose(frame, draw=False)
             landmarks_list = self.detector.findPosition(frame, draw=False)
 
             if len(landmarks_list) != 0:
                 progress_percentage = 0
-                progress_bar = 380
                 
                 if self.exercise_type == "bicep_curl":
                     elbow_angle = self.detector.findAngle(frame, 11, 13, 15, landmarks_list, draw=True)
                     shoulder_angle = self.detector.findAngle(frame, 23, 11, 13, landmarks_list, draw=True)
                     
-                    # 160 deg is extended (0% progress), 50 deg is bent (100% progress)
                     progress_percentage = np.interp(elbow_angle, (50, 160), (100, 0))
-                    progress_bar = np.interp(elbow_angle, (50, 160), (50, 380))
-                    
                     self.angles = {"elbow": round(elbow_angle, 1), "shoulder": round(shoulder_angle, 1)}
 
-                    # Form check: shoulder should be relatively stable
                     if shoulder_angle > 150:
                         self.correct_form = 1
                         self.form_msg = "Form is Correct"
                     else:
+                        self.correct_form = 0
                         self.form_msg = "Keep your shoulder stable"
 
-                    if self.correct_form == 1:
-                        # Full contraction (Up)
-                        if progress_percentage >= 95:
-                            if self.direction == 0:
-                                self.counter += 0.5
-                                self.direction = 1
-                                self.feedback = "Down" # Instruction for next phase
-                        
-                        # Full extension (Down)
-                        if progress_percentage <= 5:
-                            if self.direction == 1:
-                                self.counter += 0.5
-                                self.direction = 0
-                                self.feedback = "Up" # Instruction for next phase
+                    if progress_percentage >= 95:
+                        if self.direction == 0:
+                            self.counter += 0.5
+                            self.direction = 1
+                            self.feedback = "Down"
+                    
+                    if progress_percentage <= 5:
+                        if self.direction == 1:
+                            self.counter += 0.5
+                            self.direction = 0
+                            self.feedback = "Up"
 
                 elif self.exercise_type == "pushup":
                     shoulder_angle = self.detector.findAngle(frame, 12, 14, 16, landmarks_list, draw=True)
-                    hip_angle = self.detector.findAngle(frame, 24, 12, 26, landmarks_list, draw=True)
+                    hip_angle = self.detector.findAngle(frame, 12, 24, 26, landmarks_list, draw=True)
                     
-                    # Hip angle 160+ is straight background (0% down), lower is descending
                     progress_percentage = np.interp(shoulder_angle, (60, 160), (100, 0))
-                    
                     self.angles = {"shoulder": round(shoulder_angle, 1), "hip": round(hip_angle, 1)}
 
                     if hip_angle > 150:
                         self.correct_form = 1
                         self.form_msg = "Form is Correct"
                     else:
+                        self.correct_form = 0
                         self.form_msg = "Keep your back straight"
 
-                    if self.correct_form == 1:
-                        if progress_percentage >= 95: # Chest down
-                            if self.direction == 0:
-                                self.counter += 0.5
-                                self.direction = 1
-                                self.feedback = "Up"
-                        
-                        if progress_percentage <= 5: # Arms straight
-                            if self.direction == 1:
-                                self.counter += 0.5
-                                self.direction = 0
-                                self.feedback = "Down"
+                    if progress_percentage >= 95:
+                        if self.direction == 0:
+                            self.counter += 0.5
+                            self.direction = 1
+                            self.feedback = "Up"
+                    
+                    if progress_percentage <= 5:
+                        if self.direction == 1:
+                            self.counter += 0.5
+                            self.direction = 0
+                            self.feedback = "Down"
                 
                 elif self.exercise_type == "squat":
                     knee_angle = self.detector.findAngle(frame, 24, 26, 28, landmarks_list, draw=True)
                     hip_angle = self.detector.findAngle(frame, 12, 24, 26, landmarks_list, draw=True)
                     
                     progress_percentage = np.interp(knee_angle, (90, 160), (100, 0))
-                    
                     self.angles = {"knee": round(knee_angle, 1), "hip": round(hip_angle, 1)}
 
                     if hip_angle > 150:
                         self.correct_form = 1
                         self.form_msg = "Form is Correct"
                     else:
+                        self.correct_form = 0
                         self.form_msg = "Keep your back straight"
 
-                    if self.correct_form == 1:
-                        if progress_percentage >= 95: # Bottom of squat
-                            if self.direction == 0:
-                                self.counter += 0.5
-                                self.direction = 1
-                                self.feedback = "Up"
-                        if progress_percentage <= 5: # Standing
-                            if self.direction == 1:
-                                self.counter += 0.5
-                                self.direction = 0
-                                self.feedback = "Down"
+                    if progress_percentage >= 95:
+                        if self.direction == 0:
+                            self.counter += 0.5
+                            self.direction = 1
+                            self.feedback = "Up"
+                    if progress_percentage <= 5:
+                        if self.direction == 1:
+                            self.counter += 0.5
+                            self.direction = 0
+                            self.feedback = "Down"
 
                 elif self.exercise_type == "deadlift":
-                    # Hip and Knee angles
                     hip_angle = self.detector.findAngle(frame, 11, 23, 25, landmarks_list, draw=True)
                     knee_angle = self.detector.findAngle(frame, 23, 25, 27, landmarks_list, draw=True)
                     
                     progress_percentage = np.interp(hip_angle, (30, 160), (100, 0))
-                    
                     self.angles = {"hip": round(hip_angle, 1), "knee": round(knee_angle, 1)}
 
-                    self.correct_form = 1 # Simplified for now
-                    self.form_msg = "Deadlift Tracking"
+                    if knee_angle > 100 or hip_angle > 140:
+                        self.correct_form = 1
+                        self.form_msg = "Form is Correct"
+                    elif knee_angle < 80:
+                        self.correct_form = 0
+                        self.form_msg = "Don't squat — hinge at the hips"
+                    else:
+                        self.correct_form = 1
+                        self.form_msg = "Keep back neutral"
 
-                    if self.correct_form == 1:
-                        if progress_percentage >= 95: # Bent over
-                            if self.direction == 0:
-                                self.counter += 0.5
-                                self.direction = 1
-                                self.feedback = "Up"
-                        if progress_percentage <= 5: # Standing
-                            if self.direction == 1:
-                                self.counter += 0.5
-                                self.direction = 0
-                                self.feedback = "Down"
+                    if progress_percentage >= 95:
+                        if self.direction == 0:
+                            self.counter += 0.5
+                            self.direction = 1
+                            self.feedback = "Up"
+                    if progress_percentage <= 5:
+                        if self.direction == 1:
+                            self.counter += 0.5
+                            self.direction = 0
+                            self.feedback = "Down"
 
                 elif self.exercise_type == "pullup":
                     elbow_angle = self.detector.findAngle(frame, 11, 13, 15, landmarks_list, draw=True)
@@ -198,30 +191,27 @@ class LiveExerciseTracker:
                     self.correct_form = 1
                     self.form_msg = "Pull-up Tracking"
 
-                    if self.correct_form == 1:
-                        if progress_percentage >= 90: # Chin over bar
-                            if self.direction == 0:
-                                self.counter += 0.5
-                                self.direction = 1
-                                self.feedback = "Down"
-                        if progress_percentage <= 10: # Arms straight
-                            if self.direction == 1:
-                                self.counter += 0.5
-                                self.direction = 0
-                                self.feedback = "Up"
+                    if progress_percentage >= 90:
+                        if self.direction == 0:
+                            self.counter += 0.5
+                            self.direction = 1
+                            self.feedback = "Down"
+                    if progress_percentage <= 10:
+                        if self.direction == 1:
+                            self.counter += 0.5
+                            self.direction = 0
+                            self.feedback = "Up"
                 
                 self.progress = progress_percentage
             else:
+                self.form_msg = "No pose detected"
+                self.feedback = "Position body in frame"
                 self.progress = 0
 
-            # Internal logging for debugging
-            if int(time.time() * 2) % 2 == 0: # Log every ~1 second
-                 logger.debug(f"Tracker Status: Counter={self.counter}, Feedback={self.feedback}, Progress={self.progress}")
+            if int(time.time() * 2) % 2 == 0:
+                logger.debug(f"Video Tracker: Counter={self.counter}, Feedback={self.feedback}, Progress={self.progress}")
 
-            # Removed cv2.imshow to prevent thread GUI hangs on Windows
-            # The frontend will poll status to show progress/reps
-            
-            time.sleep(0.01)
+            time.sleep(0.05)
 
         cap.release()
         cv2.destroyAllWindows()
@@ -237,19 +227,19 @@ class LiveExerciseTracker:
             "form_message": self.form_msg,
             "angles": self.angles,
             "duration": round(elapsed, 1),
-            "is_running": self.is_running
+            "is_running": self.is_running,
+            "video_path": self.video_path
         }
 
 class ExerciseService:
+    """Service for managing video file-based exercise tracking"""
+    
     def __init__(self):
-        self._sessions: Dict[str, LiveExerciseTracker] = {}
+        self._sessions: Dict[str, VideoExerciseTracker] = {}
 
-    def start_session(self, exercise_type: str, source: str = "0") -> dict:
-        # Prevent multiple overlapping camera sessions by stopping them first
-        for sid in list(self._sessions.keys()):
-            self.stop_session(sid)
-            
-        tracker = LiveExerciseTracker(exercise_type, source)
+    def start_session(self, exercise_type: str, video_path: str) -> dict:
+        # Allow multiple video sessions (no camera conflicts)
+        tracker = VideoExerciseTracker(exercise_type, video_path)
         tracker.start()
         self._sessions[tracker.session_id] = tracker
         return tracker.get_status()

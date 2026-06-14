@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot,
   ChefHat,
@@ -9,10 +9,48 @@ import {
   Send,
   Sparkles,
   Upload,
+  X,
 } from "lucide-react";
 import recipeAPI from "../services/recipeService";
 import api from "../services/api";
-import { Button, Card, FadeIn, MetricBox, cn } from "../components/ui";
+import { Button, Card, FadeIn, cn } from "../components/ui";
+import { ChatHistory } from "../components/ChatBubble";
+import { useToast } from "../components/Toast";
+import { useAuth } from "../context/AuthContext";
+import { useStats } from "../context/StatsContext";
+
+// Separate uncontrolled input component so it never loses focus on parent re-renders
+function AddIngredientRow({ onAdd }) {
+  const [value, setValue] = useState("");
+
+  const commit = () => {
+    const trimmed = value.trim();
+    if (trimmed) {
+      onAdd(trimmed);
+      setValue("");
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } }}
+        onBlur={commit}
+        placeholder="Type and press Enter to add..."
+        className="w-full rounded-2xl border border-dashed border-white/15 bg-white/3 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500 focus:border-primary-500/50 focus:bg-white/6 transition"
+      />
+      <button
+        type="button"
+        onClick={commit}
+        className="shrink-0 rounded-2xl border border-white/10 bg-white/6 p-3 text-slate-300 transition hover:bg-primary-500/20 hover:text-primary-300"
+      >
+        <Plus size={14} />
+      </button>
+    </div>
+  );
+}
 
 function normalizeRecipe(recipe) {
   if (!recipe) return null;
@@ -33,6 +71,7 @@ function normalizeRecipe(recipe) {
     steps: Array.isArray(recipe.subsections?.find((section) => /instruction|step/i.test(section.heading))?.steps)
       ? recipe.subsections.find((section) => /instruction|step/i.test(section.heading)).steps
       : [],
+    reasoning: recipe.reasoning || "",
   };
 
   if (!rawText) {
@@ -75,8 +114,8 @@ function normalizeRecipe(recipe) {
 
   if (normalized.steps.length === 0) {
     const numberedSteps = lines
-      .filter((line) => /^\d+[\).\s-]/.test(line))
-      .map((line) => line.replace(/^\d+[\).\s-]*/, "").trim())
+      .filter((line) => /^\d+[).\s-]/.test(line))
+      .map((line) => line.replace(/^\d+[).\s-]*/, "").trim())
       .filter(Boolean);
 
     if (numberedSteps.length > 0) {
@@ -124,15 +163,55 @@ function normalizeRecipe(recipe) {
 }
 
 export default function Recipe() {
+  const { user } = useAuth();
+  const { stats, incrementRecipesGenerated } = useStats();
+  const toast = useToast();
   const [image, setImage] = useState(null);
   const [ingredients, setIngredients] = useState([]);
   const [recipe, setRecipe] = useState(null);
-  const [chatReply, setChatReply] = useState("");
+  // Multi-turn chat messages: [{role, content, timestamp}]
+  const [chatMessages, setChatMessages] = useState([]);
   const [chatMessage, setChatMessage] = useState("");
   const [loadingRecipe, setLoadingRecipe] = useState(false);
   const [loadingChat, setLoadingChat] = useState(false);
   const [dragging, setDragging] = useState(false);
+
+  // Favourites are scoped per user so different accounts don't share them
+  const favKey = user?.id ? `${user.id}_yogai_favorites` : "guest_yogai_favorites";
+  const [favorites, setFavorites] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(user?.id ? `${user.id}_yogai_favorites` : "guest_yogai_favorites") || "[]"); } catch { return []; }
+  });
+
+  // Re-load favourites when user changes (e.g. after login)
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(favKey) || "[]");
+      setFavorites(stored);
+    } catch { setFavorites([]); }
+  }, [favKey]);
   const fileInputRef = useRef(null);
+  const chatEndRef = useRef(null);
+
+  // Load chat history from backend on mount
+  useEffect(() => {
+    api.get("/recipes").then((res) => {
+      const history = res.data;
+      if (Array.isArray(history) && history.length > 0) {
+        const formatted = history.flatMap((entry) => {
+          const msgs = [];
+          if (entry.message) msgs.push({ role: "user",      content: entry.message,  timestamp: entry.timestamp });
+          if (entry.reply)   msgs.push({ role: "assistant", content: entry.reply,    timestamp: entry.timestamp });
+          return msgs;
+        });
+        if (formatted.length > 0) setChatMessages(formatted);
+      }
+    }).catch(() => {}); // silently ignore if backend is offline
+  }, []);
+
+  // Auto-scroll chat to bottom
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages, loadingChat]);
 
   const canGenerate = useMemo(
     () => ingredients.some((ingredient) => ingredient.trim()),
@@ -151,12 +230,40 @@ export default function Recipe() {
     try {
       const response = await recipeAPI.post("/upload", formData);
       const detected = response.data.ingredients || [];
+      if (detected.length === 0) {
+        toast.warning("No ingredients found", "Try a clearer photo with visible food items.");
+      } else {
+        toast.success(`${detected.length} ingredient${detected.length > 1 ? "s" : ""} detected!`, detected.slice(0, 3).join(", ") + (detected.length > 3 ? "..." : ""));
+      }
       setIngredients((current) => [...new Set([...current, ...detected])]);
     } catch (error) {
       console.error("Ingredient detection failed", error);
+      toast.error("Vision scan failed", "Could not connect to the AI backend.");
     } finally {
       setLoadingRecipe(false);
     }
+  };
+
+  const getContextString = () => {
+    let contextStr = "";
+    if (user) {
+      let bmiClass = "Unknown";
+      let bmiVal = "Unknown";
+      if (user.height && user.weight) {
+        const hMeters = Number(user.height) / 100;
+        const calcBmi = (Number(user.weight) / (hMeters * hMeters)).toFixed(1);
+        bmiVal = calcBmi;
+        if (calcBmi < 18.5) bmiClass = "Underweight";
+        else if (calcBmi >= 25) bmiClass = "Overweight";
+        else bmiClass = "Normal weight";
+      }
+
+      contextStr = `User Profile - Name: ${user.name}, Age: ${user.age || "Unknown"}, Gender: ${user.gender || "Unknown"}. ` +
+                   `Biometrics: BMI ${bmiVal} (${bmiClass}). Goals: ${user.goals?.join(", ")}. ` +
+                   `Diet: ${user.diet || "None"}. Allergies: ${user.allergies || "None"}. ` +
+                   `Performance: ${stats.calories} kcal burned, ${stats.focus}% neural focus, ${stats.accuracy}% yoga accuracy, ${stats.hydration}L hydration.`;
+    }
+    return contextStr;
   };
 
   const generateRecipe = async () => {
@@ -166,27 +273,74 @@ export default function Recipe() {
     try {
       const response = await recipeAPI.post("/recipe", {
         ingredients: ingredients.filter((item) => item.trim()),
+        context: getContextString()
       });
       setRecipe(response.data);
+      incrementRecipesGenerated();
+      toast.success("Recipe generated!", "Scroll down to view your custom recipe.");
     } catch (error) {
       console.error("Recipe generation failed", error);
+      toast.error("Recipe failed", "Could not reach the AI backend. Is it running?");
     } finally {
       setLoadingRecipe(false);
     }
   };
 
+  const saveToFavorites = () => {
+    if (!formattedRecipe) return;
+    // Check if already saved to avoid duplicates
+    if (favorites.some((f) => f.name === formattedRecipe.name)) {
+      toast.info("Already saved", `${formattedRecipe.name} is already in your favorites.`);
+      return;
+    }
+    // Store the complete recipe object so clicking it can restore it fully
+    const entry = { ...formattedRecipe, rawRecipe: recipe, savedAt: new Date().toISOString() };
+    const updated = [entry, ...favorites].slice(0, 20);
+    setFavorites(updated);
+    localStorage.setItem(favKey, JSON.stringify(updated));
+    toast.success("Saved to favorites!", formattedRecipe.name);
+  };
+
+  const loadFavorite = (fav) => {
+    // Restore the original recipe response object so it re-renders in full
+    if (fav.rawRecipe) {
+      setRecipe(fav.rawRecipe);
+    } else {
+      // Fallback: build a minimal recipe object from the stored data
+      setRecipe({
+        recipeName: fav.name,
+        subsections: [
+          { heading: "Ingredients", items: fav.ingredients || [] },
+          { heading: "Instructions", steps: fav.steps || [] },
+        ],
+        reasoning: fav.reasoning || "",
+        description: fav.summary || "",
+      });
+    }
+    toast.info("Recipe loaded!", `Viewing saved recipe: ${fav.name}`);
+    // Scroll to the recipe card
+    setTimeout(() => {
+      document.getElementById("recipe-output-card")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 100);
+  };
+
   const sendChat = async () => {
-    if (!chatMessage.trim()) return;
+    const text = chatMessage.trim();
+    if (!text) return;
+
+    const userMsg = { role: "user", content: text, timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) };
+    setChatMessages((prev) => [...prev, userMsg]);
+    setChatMessage("");
     setLoadingChat(true);
 
     try {
-      const response = await api.post("/chat", {
-        message: chatMessage,
-      });
-      setChatReply(response.data.reply || "");
+      const response = await api.post("/chat", { message: text, context: getContextString() });
+      const reply = response.data.reply || "No response from assistant.";
+      setChatMessages((prev) => [...prev, { role: "assistant", content: reply, timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) }]);
     } catch (error) {
       console.error("Chat request failed", error);
-      setChatReply("AI chat placeholder connected. Replace with your backend response.");
+      setChatMessages((prev) => [...prev, { role: "assistant", content: "Sorry, I couldn't connect to the AI backend right now. Make sure the server is running.", timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) }]);
+      toast.error("Chat failed", "Backend appears to be offline.");
     } finally {
       setLoadingChat(false);
     }
@@ -236,8 +390,14 @@ export default function Recipe() {
                 icon={History}
                 label="View History"
                 sublabel="Recent meals"
+                onClick={() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" })}
               />
-              <ActionButton icon={Heart} label="Favorites" sublabel="Saved ideas" />
+              <ActionButton
+                icon={Heart}
+                label="Favorites"
+                sublabel="Saved ideas"
+                onClick={() => toast.info("Favorites are shown below", "Save recipes then scroll down to view them.")}
+              />
             </div>
           </div>
         </Card>
@@ -321,40 +481,33 @@ export default function Recipe() {
                 <Bot size={20} className="text-primary-200" />
                 <h2 className="text-2xl font-semibold text-white">AI Chat</h2>
               </div>
-              <p className="mt-3 text-sm text-slate-400">
-                Placeholder wired to <code>POST /api/chat</code>.
-              </p>
 
-              <div className="mt-6 flex gap-3">
+              {/* Chat history */}
+              <div className="mt-5 max-h-72 overflow-y-auto space-y-1 pr-1">
+                <ChatHistory messages={chatMessages} isLoading={loadingChat} />
+                <div ref={chatEndRef} />
+              </div>
+
+              {/* Input row */}
+              <div className="mt-4 flex gap-3">
                 <input
                   value={chatMessage}
                   onChange={(event) => setChatMessage(event.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendChat()}
                   placeholder="Ask for meal prep ideas, substitutions, or macros..."
                   className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-white/6 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-400"
                 />
-                <Button onClick={sendChat} disabled={loadingChat}>
+                <Button onClick={sendChat} disabled={loadingChat || !chatMessage.trim()}>
                   <Send size={16} />
                   Send
                 </Button>
-              </div>
-
-              <div className="mt-5 rounded-2xl border border-white/8 bg-white/5 p-4">
-                <p className="text-xs uppercase tracking-[0.22em] text-slate-400">
-                  Assistant Reply
-                </p>
-                <p className="mt-3 text-sm leading-6 text-slate-200">
-                  {loadingChat
-                    ? "Thinking..."
-                    : chatReply ||
-                      "Your AI kitchen assistant will surface recipe ideas, substitutions, and flavor pairings here."}
-                </p>
               </div>
             </Card>
           </FadeIn>
 
           {recipe ? (
             <FadeIn delay={0.2}>
-              <Card glow="amber">
+              <Card id="recipe-output-card" glow="amber">
                 <p className="section-label">Generated Recipe</p>
                 <h2 className="mt-2 text-3xl font-semibold text-white">
                   {formattedRecipe?.name || "Recipe Output"}
@@ -411,6 +564,23 @@ export default function Recipe() {
                     </ol>
                   </div>
                 ) : null}
+
+                {formattedRecipe?.reasoning ? (
+                  <div className="mt-8 rounded-[24px] border border-primary-500/30 bg-primary-500/10 p-6 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-4 opacity-10">
+                      <Sparkles size={64} />
+                    </div>
+                    <div className="relative z-10">
+                      <div className="flex items-center gap-2 text-primary-400 mb-3">
+                        <Heart size={20} fill="currentColor" />
+                        <h3 className="font-bold uppercase tracking-wider text-sm">Personalized Diet Profile</h3>
+                      </div>
+                      <p className="text-base leading-relaxed text-slate-200">
+                        {formattedRecipe.reasoning}
+                      </p>
+                    </div>
+                  </div>
+                ) : null}
               </Card>
             </FadeIn>
           ) : null}
@@ -424,38 +594,33 @@ export default function Recipe() {
                   <p className="section-label">Pantry</p>
                   <h2 className="mt-2 text-2xl font-semibold text-white">Pantry Panel</h2>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setIngredients((current) => [...current, ""])}
-                  className="rounded-2xl border border-white/10 bg-white/6 p-3 text-slate-300 transition hover:bg-white/10 hover:text-white"
-                >
-                  <Plus size={18} />
-                </button>
               </div>
 
               <div className="mt-6 space-y-3">
-                {ingredients.length ? (
-                  ingredients.map((ingredient, index) => (
+                {ingredients.map((ingredient, index) => (
+                  <div key={index} className="flex items-center gap-2">
                     <input
-                      key={`${ingredient}-${index}`}
                       value={ingredient}
                       onChange={(event) => {
                         const next = [...ingredients];
                         next[index] = event.target.value;
                         setIngredients(next);
                       }}
-                      placeholder="Add ingredient"
-                      className="w-full rounded-2xl border border-white/8 bg-white/5 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-400"
+                      placeholder="Ingredient name"
+                      className="w-full rounded-2xl border border-white/8 bg-white/5 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-400 focus:border-primary-500/50 focus:ring-1 focus:ring-primary-500/30 transition"
                     />
-                  ))
-                ) : (
-                  <div className="rounded-[28px] border border-dashed border-white/10 bg-white/4 px-6 py-10 text-center">
-                    <p className="text-lg font-semibold text-white">Pantry is empty</p>
-                    <p className="mt-2 text-sm text-slate-400">
-                      Scan ingredients or add items manually to get started.
-                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setIngredients((prev) => prev.filter((_, i) => i !== index))}
+                      className="shrink-0 rounded-2xl border border-white/8 bg-white/5 p-3 text-slate-400 transition hover:bg-rose-500/20 hover:text-rose-400"
+                    >
+                      <X size={14} />
+                    </button>
                   </div>
-                )}
+                ))}
+
+                {/* Add new ingredient row */}
+                <AddIngredientRow onAdd={(val) => setIngredients((prev) => [...prev, val])} />
               </div>
 
               <Button
@@ -471,14 +636,54 @@ export default function Recipe() {
 
           <FadeIn delay={0.18}>
             <Card glow="amber">
-              <MetricBox
-                label="API Placeholders"
-                value="Recipe + Chat Ready"
-                delta="POST /api/recipe and POST /api/chat are connected in the UI layer."
-                icon={Bot}
-                tone="amber"
-                className="min-h-0"
-              />
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Heart size={18} className="text-amber-400" />
+                  <h2 className="text-xl font-semibold text-white">Saved Favorites</h2>
+                </div>
+                {recipe && (
+                  <button
+                    type="button"
+                    onClick={saveToFavorites}
+                    className="flex items-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-400 hover:bg-amber-500/20 transition"
+                  >
+                    <Heart size={12} /> Save current
+                  </button>
+                )}
+              </div>
+              <div className="mt-4 space-y-2">
+                {favorites.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-white/10 bg-white/4 px-5 py-8 text-center">
+                    <p className="text-sm text-slate-400">No favorites yet. Generate a recipe and save it!</p>
+                  </div>
+                ) : (
+                  favorites.map((fav, i) => (
+                    <div key={i} className="flex items-center justify-between rounded-2xl border border-white/8 bg-white/5 px-4 py-3 gap-2">
+                      {/* Clicking the name loads the recipe */}
+                      <button
+                        type="button"
+                        onClick={() => loadFavorite(fav)}
+                        className="flex-1 text-left min-w-0 hover:opacity-80 transition"
+                      >
+                        <p className="text-sm font-semibold text-white truncate">{fav.name}</p>
+                        <p className="text-xs text-slate-500">{new Date(fav.savedAt).toLocaleDateString()} · tap to load</p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = favorites.filter((_, idx) => idx !== i);
+                          setFavorites(updated);
+                          localStorage.setItem(favKey, JSON.stringify(updated));
+                        }}
+                        className="shrink-0 text-slate-500 hover:text-rose-400 transition"
+                        title="Remove from favorites"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
             </Card>
           </FadeIn>
 

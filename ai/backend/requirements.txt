@@ -38,3 +38,8 @@ cycler
 flatbuffers
 packaging
 pycparser
+
+# -- Database & Auth --
+sqlalchemy
+passlib[bcrypt]
+python-jose[cryptography]

@@ -25,6 +25,7 @@ try:
     from ultralytics import YOLO
     from PIL import Image
     import numpy as np
+    import io
     HAS_YOLO = True
     logger.info("ultralytics YOLO available — ingredient detection enabled.")
 except ImportError:
@@ -36,7 +37,6 @@ except ImportError:
     )
 
 # ─── Food/ingredient class names present in COCO-trained YOLOv8 ──────────────
-# These are the food-related classes from COCO-80 that YOLO can detect.
 COCO_FOOD_CLASSES = {
     "banana", "apple", "sandwich", "orange", "broccoli", "carrot",
     "hot dog", "pizza", "donut", "cake", "bottle", "wine glass",
@@ -44,87 +44,75 @@ COCO_FOOD_CLASSES = {
 }
 
 
+import base64
+
 class IngredientDetector:
     """
-    Detects food ingredients from an image using YOLOv8.
-    Uses the general COCO-trained yolov8n.pt model.
-    For better food coverage, replace with a fine-tuned food model.
+    Detects food ingredients from an image using Groq Vision API.
     """
 
-    _model = None  # shared singleton
-
-    def __init__(self, model_path: str = "yolo_fruits_and_vegetables_v8x.pt", conf_threshold: float = 0.25):
-        self.conf_threshold = conf_threshold
-        # Check if the specific model exists in the backend directory
-        target_model = os.path.join(os.path.dirname(__file__), "..", model_path)
-        if not os.path.exists(target_model):
-            target_model = model_path # fallback to just the name for ultralytics auto-download if applicable
-            
-        self.model_path = os.getenv("YOLO_MODEL_PATH", target_model)
-
-    def _get_model(self):
-        """Lazy-load the YOLO model."""
-        if IngredientDetector._model is None and HAS_YOLO:
-            try:
-                IngredientDetector._model = YOLO(self.model_path)
-                logger.info("YOLO model loaded: %s", self.model_path)
-            except Exception as e:
-                logger.error("Failed to load YOLO model: %s", e)
-        return IngredientDetector._model
+    def __init__(self):
+        self.groq_api_key = os.getenv("GROQ_API_KEY")
+        self.groq_url = "https://api.groq.com/openai/v1/chat/completions"
+        self.model = "meta-llama/llama-4-scout-17b-16e-instruct"
 
     def detect_from_bytes(self, image_bytes: bytes) -> Dict:
-        """
-        Run YOLO inference on raw image bytes.
-        Returns detected ingredient names + counts (matching RecipeMaker-AI style).
-        """
-        if not HAS_YOLO:
-            return self._fallback_detection()
-
-        model = self._get_model()
-        if model is None:
+        if not self.groq_api_key:
             return self._fallback_detection()
 
         try:
-            # RecipeMaker-AI style: Save to temp then predict (or use predict directly on bytes if supported)
-            # For robustness, we'll use PIL Image then predict
-            image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+            base64_image = base64.b64encode(image_bytes).decode('utf-8')
             
-            # Use model.predict as in RecipeMaker-AI
-            results = model.predict(source=image, conf=self.conf_threshold, verbose=False)
+            headers = {
+                "Authorization": f"Bearer {self.groq_api_key}",
+                "Content-Type": "application/json",
+            }
             
-            ingredient_counts = {}
-            detections = []
-            
-            # The results object contains boxes
-            if len(results) > 0:
-                result = results[0]
-                for box in result.boxes:
-                    label_index = int(box.cls)
-                    label_name = model.names[label_index]
-                    confidence = round(float(box.conf), 2)
-                    
-                    ingredient_counts[label_name] = ingredient_counts.get(label_name, 0) + 1
-                    detections.append({"name": label_name, "confidence": confidence})
+            payload = {
+                "model": self.model,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "Identify only the food ingredients visible in this image. Do not include plates, bowls, utensils, or backgrounds. Reply with ONLY a simple comma-separated list of the ingredient names in singular form, in all lowercase. If no food is found, reply with 'none'."},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{base64_image}"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "temperature": 0.2,
+                "max_tokens": 100
+            }
 
-            ingredients = list(ingredient_counts.keys())
-            logger.info("YOLO detected ingredients: %s", ingredients)
+            response = requests.post(self.groq_url, json=payload, headers=headers, timeout=20)
+            
+            if response.status_code != 200:
+                logger.error("Groq Vision API Error: %s", response.text)
+                return self._fallback_detection()
+                
+            content = response.json()["choices"][0]["message"]["content"].strip().lower()
+            
+            if content == "none" or not content:
+                ingredients = []
+            else:
+                ingredients = [i.strip() for i in content.split(",") if i.strip()]
+                
+            logger.info("Groq Vision detected ingredients: %s", ingredients)
 
             return {
                 "ingredients": ingredients,
-                "counts": ingredient_counts,
-                "detections": detections,
-                "source": "yolo",
+                "counts": {i: 1 for i in ingredients},
+                "detections": [{"name": i, "confidence": 0.99} for i in ingredients],
+                "source": "groq_vision",
             }
 
         except Exception as e:
-            logger.error("YOLO inference error: %s", e)
+            logger.error("Groq Vision inference error: %s", e)
             return self._fallback_detection()
-
-    @staticmethod
-    def _is_likely_food(class_name: str) -> bool:
-        food_keywords = ["fruit", "vegetable", "meat", "fish", "bread", "egg",
-                         "cheese", "milk", "tomato", "potato", "onion", "garlic"]
-        return any(kw in class_name for kw in food_keywords)
 
     @staticmethod
     def _fallback_detection() -> Dict:
@@ -132,10 +120,7 @@ class IngredientDetector:
             "ingredients": [],
             "detections": [],
             "source": "fallback",
-            "warning": (
-                "YOLO model not available. "
-                "Install ultralytics and Pillow, or provide a custom YOLO_MODEL_PATH."
-            ),
+            "warning": "Groq Vision model not available or failed.",
         }
 
 
@@ -194,41 +179,142 @@ class RecipeService:
             return self._fallback_recipe(prompt)
 
     def _fallback_recipe(self, query: str) -> str:
-        lower = query.lower()
-        if "vegetarian" in lower or "veggie" in lower:
+        """
+        Smart fallback engine simulating an LLM when GROQ API key is missing.
+        Parses the injected context to give personalized responses based on the AI Nutrition Matrix.
+        """
+        import re
+        
+        # Extract user message
+        user_msg_match = re.search(r"User:\s*(.*)\nAssistant:", query, re.IGNORECASE)
+        user_msg = user_msg_match.group(1).strip().lower() if user_msg_match else query.lower()
+
+        # Extract context variables
+        name = "there"
+        name_match = re.search(r"Name:\s*([^,]+),", query)
+        if name_match:
+            name = name_match.group(1).strip()
+            
+        bmi_class = "Normal weight"
+        bmi_match = re.search(r"BMI\s+[\d\.]+\s+\(([^)]+)\)", query)
+        if bmi_match:
+            bmi_class = bmi_match.group(1).strip()
+            
+        accuracy = 90
+        acc_match = re.search(r"(\d+)%\s*yoga accuracy", query)
+        if acc_match:
+            accuracy = int(acc_match.group(1))
+
+        # 1. Greeting / Conversational / Underspecified prompts
+        conversational_words = ["hi", "hello", "hey", "ok", "okay", "start", "help", "", "thanks", "thank you", "thx", "awesome", "great", "cool"]
+        if user_msg in conversational_words or user_msg.strip("!?.") in conversational_words:
             return (
-                "Vegetable Stir-Fry\n- 2 cups mixed vegetables\n- 2 tbsp soy sauce\n"
-                "- Rice\n\nSteps:\n1. Heat oil\n2. Add vegetables\n"
-                "3. Stir-fry 5 mins\n4. Add soy sauce\n5. Serve with rice"
+                f"Hello {name}! I see you are currently in the **{bmi_class}** category, and your Yoga Accuracy is **{accuracy}%**.\n\n"
+                f"Whenever you're ready, list the ingredients you have in your kitchen, or ask for a diet recommendation, and I will generate a custom recipe based on your unique fitness data!"
             )
-        elif "chicken" in lower:
+            
+        # 2. Diet / Recommendation intent
+        if "diet" in user_msg or "recommend" in user_msg or "macros" in user_msg or "protein" in user_msg:
+            # BMI Logic
+            if "Underweight" in bmi_class:
+                recommendation = "a calorie surplus meal with protein-rich foods and healthy fats to help you build mass."
+            elif "Overweight" in bmi_class:
+                recommendation = "a calorie deficit meal with high protein, low sugar, and high fiber to support weight management."
+            else:
+                recommendation = "a balanced nutrition profile with complex carbs and seasonal vegetables to maintain your physique."
+            
+            # Accuracy Logic
+            if accuracy > 90:
+                acc_rec = "Since your Yoga Accuracy is high (>90%), I also recommend performance enhancement and muscle recovery foods."
+            elif accuracy >= 70:
+                acc_rec = "Your Yoga Accuracy is solid (70-90%), so let's focus on balanced energy and hydration foods."
+            else:
+                acc_rec = "To help improve your Yoga Accuracy (<70%), let's stick to energy-supporting, micronutrient-rich beginner meals."
+
             return (
-                "Grilled Chicken\n- Chicken breast\n- Salt, pepper\n- Lemon juice\n\n"
-                "Steps:\n1. Season chicken\n2. Grill 15 mins per side\n"
-                "3. Rest 5 mins\n4. Serve with lemon"
+                f"Based on your profile ({bmi_class}), I recommend {recommendation} {acc_rec}\n\n"
+                f"Tell me what ingredients you have, and I'll generate a custom recipe that fits these exact rules!"
             )
-        elif "pasta" in lower:
-            return (
-                "Simple Pasta\n- Pasta\n- Tomato sauce\n- Garlic\n\n"
-                "Steps:\n1. Boil pasta\n2. Heat tomato sauce\n"
-                "3. Combine\n4. Top with garlic"
-            )
-        return "Create a balanced meal using:\nProtein, Vegetables, Carbs, Healthy Fat.\nSeason to taste!"
+            
+        # 3. Ingredient-based Recipe Generation (Catch-all for any food items)
+        ingredients_list = user_msg.title()
+        
+        # Build explanation string
+        explanation = ""
+        if "Underweight" in bmi_class:
+            explanation = "I designed this recipe to be calorie-dense and rich in healthy fats to support healthy weight gain (BMI < 18.5)."
+        elif "Overweight" in bmi_class:
+            explanation = "I kept this recipe low-sugar and high-fiber to support a calorie deficit for weight management (BMI >= 25)."
+        else:
+            explanation = "This is a perfectly balanced meal to maintain your healthy weight."
+            
+        if accuracy > 90:
+            explanation += " I also added extra protein for muscle recovery since your yoga accuracy is excellent!"
+        elif accuracy >= 70:
+            explanation += " I included hydrating elements to keep your energy balanced."
+        else:
+            explanation += " It is packed with micronutrients to support your energy levels for your next yoga session."
+        
+        import random
+        recipe_types = ["Stir-Fry", "Skillet", "Wrap", "Salad", "Medley", "Plate", "Roast"]
+        recipe_type = random.choice(recipe_types)
+
+        return (
+            f"Perfect {name}. Here is a personalized recipe using your ingredients:\n\n"
+            f"**Custom {ingredients_list} {recipe_type}**\n"
+            f"- {ingredients_list}\n"
+            "- Complex carbs\n"
+            "- Healthy fats & Greens\n\n"
+            "**Steps:**\n"
+            "1. Prep your ingredients.\n"
+            "2. Cook gently to preserve nutrients.\n"
+            "3. Serve and enjoy.\n\n"
+            f"**Why this recipe?**\n{explanation}"
+        )
 
     # ── Recipe generation ─────────────────────────────────────────────────────
-    def generate_recipe(self, ingredients: List[str]) -> Dict:
+    def generate_recipe(self, ingredients: List[str], user_context: str = "") -> Dict:
         self.detected_ingredients = ingredients
+        context_rules = (
+            "You are a professional chef and personalized AI wellness assistant for YogAI. "
+            "Follow these strict Recommendation Rules based on the user's data:\n"
+            "1. Underweight (BMI < 18.5): Recommend calorie surplus meals, protein-rich foods, and healthy fats.\n"
+            "2. Overweight (BMI >= 25): Recommend calorie deficit meals, high protein, low sugar, and high fiber.\n"
+            "3. Normal BMI: Recommend balanced nutrition (proteins, complex carbs, healthy fats).\n"
+            "4. High Yoga Accuracy (>90%): Recommend performance enhancement and muscle recovery meals.\n"
+            "5. Medium Accuracy (70-90%): Recommend balanced energy and hydration.\n"
+            "6. Low Accuracy (<70%): Recommend energy-supporting and beginner-friendly nutrition.\n"
+        )
+        if user_context:
+            context_rules += f"\nUser Context: {user_context}\n"
+            
         prompt = (
-            f"You are a professional chef. Create a simple recipe using these ingredients:\n"
+            f"{context_rules}\n"
+            f"Create a simple recipe using these ingredients:\n"
             f"{', '.join(ingredients)}\n\n"
             f"Provide:\n1. Recipe Name\n2. Key Ingredients (from the list)\n"
             f"3. Simple Steps (max 6)\n4. Cooking Time estimate\n"
+            f"CRITICAL INSTRUCTION: Include a short paragraph at the end explaining exactly WHY you are recommending this recipe based on their specific BMI category and Yoga Accuracy."
         )
         result = self.query_groq(prompt)
         
         # Parse result into subsections (RecipeMaker-AI style)
         steps = [line.strip() for line in result.split("\n") if line.strip() and (line[0].isdigit() or line.startswith("-"))]
         
+        # Extract the explanation paragraph
+        import re
+        reasoning = ""
+        reasoning_match = re.search(r"(?:Why this recipe\?|CRITICAL INSTRUCTION:?|Here is why|Based on your|Reasoning:)(.*?)$", result, re.IGNORECASE | re.DOTALL)
+        if reasoning_match:
+            reasoning = reasoning_match.group(1).strip()
+            # Clean up the result to not include the reasoning in the main steps if it got caught
+            result = result.replace(reasoning_match.group(0), "").strip()
+        else:
+            # Fallback: just take the last paragraph if it doesn't match steps
+            paragraphs = [p.strip() for p in result.split("\n\n") if p.strip()]
+            if paragraphs and not paragraphs[-1][0].isdigit():
+                reasoning = paragraphs[-1]
+
         recipe = {
             "id": self.next_id,
             "recipeName": (
@@ -238,6 +324,7 @@ class RecipeService:
             "title": f"Recipe for {', '.join(ingredients)}",
             "ingredients": ", ".join(ingredients),
             "description": result,
+            "reasoning": reasoning,
             "subsections": [
                 {
                     "heading": "Ingredients",
@@ -256,14 +343,22 @@ class RecipeService:
         return recipe
 
     # ── Chat respond ──────────────────────────────────────────────────────────
-    def respond(self, message: str, intent: str = None) -> Dict:
+    def respond(self, message: str, intent: str = None, user_context: str = "") -> Dict:
         context = (
-            "User is asking about recipes."
-            if intent == "recipe"
-            else "You are a helpful culinary assistant."
+            "You are a personalized AI wellness and nutrition assistant for YogAI. "
+            "Follow these strict Recommendation Rules based on the user's data:\n"
+            "1. Underweight (BMI < 18.5): Recommend calorie surplus meals, protein-rich foods, and healthy fats.\n"
+            "2. Overweight (BMI >= 25): Recommend calorie deficit meals, high protein, low sugar, and high fiber.\n"
+            "3. Normal BMI: Recommend balanced nutrition (proteins, complex carbs, healthy fats).\n"
+            "4. High Yoga Accuracy (>90%): Recommend performance enhancement and muscle recovery meals.\n"
+            "5. Medium Accuracy (70-90%): Recommend balanced energy and hydration.\n"
+            "6. Low Accuracy (<70%): Recommend energy-supporting and beginner-friendly nutrition.\n"
+            "CRITICAL INSTRUCTION: You MUST explain exactly WHY you are recommending the recipe based on their specific BMI category and Yoga Accuracy.\n"
         )
+        if user_context:
+            context += f"User Context: {user_context} "
         if self.detected_ingredients:
-            context += f" Available ingredients: {', '.join(self.detected_ingredients)}."
+            context += f"Available ingredients: {', '.join(self.detected_ingredients)}."
 
         prompt = f"{context}\nUser: {message}\nAssistant:"
         response = self.query_groq(prompt)
