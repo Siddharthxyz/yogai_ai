@@ -6,7 +6,7 @@ export function cn(...inputs) {
   return twMerge(clsx(inputs));
 }
 
-export function Card({ className, glow = "indigo", children }) {
+export function Card({ id, className, glow = "indigo", children }) {
   const glowMap = {
     indigo: "from-primary-500/18 via-sky-400/8 to-transparent",
     emerald: "from-emerald-400/18 via-primary-500/8 to-transparent",
@@ -16,6 +16,7 @@ export function Card({ className, glow = "indigo", children }) {
 
   return (
     <motion.div
+      id={id}
       initial={{ scale: 1 }}
       animate={{ scale: [1, 1.002, 1] }}
       transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}

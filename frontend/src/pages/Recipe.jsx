@@ -175,9 +175,20 @@ export default function Recipe() {
   const [loadingRecipe, setLoadingRecipe] = useState(false);
   const [loadingChat, setLoadingChat] = useState(false);
   const [dragging, setDragging] = useState(false);
+
+  // Favourites are scoped per user so different accounts don't share them
+  const favKey = user?.id ? `${user.id}_yogai_favorites` : "guest_yogai_favorites";
   const [favorites, setFavorites] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("yogai_favorites") || "[]"); } catch { return []; }
+    try { return JSON.parse(localStorage.getItem(user?.id ? `${user.id}_yogai_favorites` : "guest_yogai_favorites") || "[]"); } catch { return []; }
   });
+
+  // Re-load favourites when user changes (e.g. after login)
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(favKey) || "[]");
+      setFavorites(stored);
+    } catch { setFavorites([]); }
+  }, [favKey]);
   const fileInputRef = useRef(null);
   const chatEndRef = useRef(null);
 
@@ -277,10 +288,40 @@ export default function Recipe() {
 
   const saveToFavorites = () => {
     if (!formattedRecipe) return;
-    const updated = [{ name: formattedRecipe.name, savedAt: new Date().toISOString() }, ...favorites].slice(0, 20);
+    // Check if already saved to avoid duplicates
+    if (favorites.some((f) => f.name === formattedRecipe.name)) {
+      toast.info("Already saved", `${formattedRecipe.name} is already in your favorites.`);
+      return;
+    }
+    // Store the complete recipe object so clicking it can restore it fully
+    const entry = { ...formattedRecipe, rawRecipe: recipe, savedAt: new Date().toISOString() };
+    const updated = [entry, ...favorites].slice(0, 20);
     setFavorites(updated);
-    localStorage.setItem("yogai_favorites", JSON.stringify(updated));
+    localStorage.setItem(favKey, JSON.stringify(updated));
     toast.success("Saved to favorites!", formattedRecipe.name);
+  };
+
+  const loadFavorite = (fav) => {
+    // Restore the original recipe response object so it re-renders in full
+    if (fav.rawRecipe) {
+      setRecipe(fav.rawRecipe);
+    } else {
+      // Fallback: build a minimal recipe object from the stored data
+      setRecipe({
+        recipeName: fav.name,
+        subsections: [
+          { heading: "Ingredients", items: fav.ingredients || [] },
+          { heading: "Instructions", steps: fav.steps || [] },
+        ],
+        reasoning: fav.reasoning || "",
+        description: fav.summary || "",
+      });
+    }
+    toast.info("Recipe loaded!", `Viewing saved recipe: ${fav.name}`);
+    // Scroll to the recipe card
+    setTimeout(() => {
+      document.getElementById("recipe-output-card")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 100);
   };
 
   const sendChat = async () => {
@@ -466,7 +507,7 @@ export default function Recipe() {
 
           {recipe ? (
             <FadeIn delay={0.2}>
-              <Card glow="amber">
+              <Card id="recipe-output-card" glow="amber">
                 <p className="section-label">Generated Recipe</p>
                 <h2 className="mt-2 text-3xl font-semibold text-white">
                   {formattedRecipe?.name || "Recipe Output"}
@@ -617,19 +658,25 @@ export default function Recipe() {
                   </div>
                 ) : (
                   favorites.map((fav, i) => (
-                    <div key={i} className="flex items-center justify-between rounded-2xl border border-white/8 bg-white/5 px-4 py-3">
-                      <div>
-                        <p className="text-sm font-semibold text-white truncate max-w-[180px]">{fav.name}</p>
-                        <p className="text-xs text-slate-500">{new Date(fav.savedAt).toLocaleDateString()}</p>
-                      </div>
+                    <div key={i} className="flex items-center justify-between rounded-2xl border border-white/8 bg-white/5 px-4 py-3 gap-2">
+                      {/* Clicking the name loads the recipe */}
+                      <button
+                        type="button"
+                        onClick={() => loadFavorite(fav)}
+                        className="flex-1 text-left min-w-0 hover:opacity-80 transition"
+                      >
+                        <p className="text-sm font-semibold text-white truncate">{fav.name}</p>
+                        <p className="text-xs text-slate-500">{new Date(fav.savedAt).toLocaleDateString()} · tap to load</p>
+                      </button>
                       <button
                         type="button"
                         onClick={() => {
                           const updated = favorites.filter((_, idx) => idx !== i);
                           setFavorites(updated);
-                          localStorage.setItem("yogai_favorites", JSON.stringify(updated));
+                          localStorage.setItem(favKey, JSON.stringify(updated));
                         }}
-                        className="text-slate-500 hover:text-rose-400 transition"
+                        className="shrink-0 text-slate-500 hover:text-rose-400 transition"
+                        title="Remove from favorites"
                       >
                         <X size={14} />
                       </button>
