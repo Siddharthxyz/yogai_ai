@@ -85,24 +85,24 @@ class LiveExerciseTracker:
                         self.correct_form = 1
                         self.form_msg = "Form is Correct"
                     else:
+                        self.correct_form = 0
                         self.form_msg = "Keep your shoulder stable"
 
-                    if self.correct_form == 1:
-                        if progress_percentage >= 95:
-                            if self.direction == 0:
-                                self.counter += 0.5
-                                self.direction = 1
-                                self.feedback = "Down"
-                        
-                        if progress_percentage <= 5:
-                            if self.direction == 1:
-                                self.counter += 0.5
-                                self.direction = 0
-                                self.feedback = "Up"
+                    if progress_percentage >= 95:
+                        if self.direction == 0:
+                            self.counter += 0.5
+                            self.direction = 1
+                            self.feedback = "Down"
+                    
+                    if progress_percentage <= 5:
+                        if self.direction == 1:
+                            self.counter += 0.5
+                            self.direction = 0
+                            self.feedback = "Up"
 
                 elif self.exercise_type == "pushup":
                     shoulder_angle = self.detector.findAngle(frame, 12, 14, 16, landmarks_list, draw=True)
-                    hip_angle = self.detector.findAngle(frame, 24, 12, 26, landmarks_list, draw=True)
+                    hip_angle = self.detector.findAngle(frame, 12, 24, 26, landmarks_list, draw=True)
                     
                     progress_percentage = np.interp(shoulder_angle, (60, 160), (100, 0))
                     self.angles = {"shoulder": round(shoulder_angle, 1), "hip": round(hip_angle, 1)}
@@ -111,20 +111,20 @@ class LiveExerciseTracker:
                         self.correct_form = 1
                         self.form_msg = "Form is Correct"
                     else:
+                        self.correct_form = 0
                         self.form_msg = "Keep your back straight"
 
-                    if self.correct_form == 1:
-                        if progress_percentage >= 95:
-                            if self.direction == 0:
-                                self.counter += 0.5
-                                self.direction = 1
-                                self.feedback = "Up"
-                        
-                        if progress_percentage <= 5:
-                            if self.direction == 1:
-                                self.counter += 0.5
-                                self.direction = 0
-                                self.feedback = "Down"
+                    if progress_percentage >= 95:
+                        if self.direction == 0:
+                            self.counter += 0.5
+                            self.direction = 1
+                            self.feedback = "Up"
+                    
+                    if progress_percentage <= 5:
+                        if self.direction == 1:
+                            self.counter += 0.5
+                            self.direction = 0
+                            self.feedback = "Down"
                 
                 elif self.exercise_type == "squat":
                     knee_angle = self.detector.findAngle(frame, 24, 26, 28, landmarks_list, draw=True)
@@ -137,19 +137,19 @@ class LiveExerciseTracker:
                         self.correct_form = 1
                         self.form_msg = "Form is Correct"
                     else:
+                        self.correct_form = 0
                         self.form_msg = "Keep your back straight"
 
-                    if self.correct_form == 1:
-                        if progress_percentage >= 95:
-                            if self.direction == 0:
-                                self.counter += 0.5
-                                self.direction = 1
-                                self.feedback = "Up"
-                        if progress_percentage <= 5:
-                            if self.direction == 1:
-                                self.counter += 0.5
-                                self.direction = 0
-                                self.feedback = "Down"
+                    if progress_percentage >= 95:
+                        if self.direction == 0:
+                            self.counter += 0.5
+                            self.direction = 1
+                            self.feedback = "Up"
+                    if progress_percentage <= 5:
+                        if self.direction == 1:
+                            self.counter += 0.5
+                            self.direction = 0
+                            self.feedback = "Down"
 
                 elif self.exercise_type == "deadlift":
                     hip_angle = self.detector.findAngle(frame, 11, 23, 25, landmarks_list, draw=True)
@@ -168,17 +168,16 @@ class LiveExerciseTracker:
                         self.correct_form = 1
                         self.form_msg = "Keep back neutral"
 
-                    if self.correct_form == 1:
-                        if progress_percentage >= 95:
-                            if self.direction == 0:
-                                self.counter += 0.5
-                                self.direction = 1
-                                self.feedback = "Up"
-                        if progress_percentage <= 5:
-                            if self.direction == 1:
-                                self.counter += 0.5
-                                self.direction = 0
-                                self.feedback = "Down"
+                    if progress_percentage >= 95:
+                        if self.direction == 0:
+                            self.counter += 0.5
+                            self.direction = 1
+                            self.feedback = "Up"
+                    if progress_percentage <= 5:
+                        if self.direction == 1:
+                            self.counter += 0.5
+                            self.direction = 0
+                            self.feedback = "Down"
 
                 elif self.exercise_type == "pullup":
                     elbow_angle = self.detector.findAngle(frame, 11, 13, 15, landmarks_list, draw=True)
@@ -189,17 +188,16 @@ class LiveExerciseTracker:
                     self.correct_form = 1
                     self.form_msg = "Pull-up Tracking"
 
-                    if self.correct_form == 1:
-                        if progress_percentage >= 90:
-                            if self.direction == 0:
-                                self.counter += 0.5
-                                self.direction = 1
-                                self.feedback = "Down"
-                        if progress_percentage <= 10:
-                            if self.direction == 1:
-                                self.counter += 0.5
-                                self.direction = 0
-                                self.feedback = "Up"
+                    if progress_percentage >= 90:
+                        if self.direction == 0:
+                            self.counter += 0.5
+                            self.direction = 1
+                            self.feedback = "Down"
+                    if progress_percentage <= 10:
+                        if self.direction == 1:
+                            self.counter += 0.5
+                            self.direction = 0
+                            self.feedback = "Up"
                 
                 self.progress = progress_percentage
             else:

@@ -17,6 +17,8 @@ class PullUpCounter:
         self.form_msg = "Waiting for Pose"
         self.progress = 0
         self.angles = {}
+        self.current_frame = None
+        self.is_running = False
 
     def process_frame(self, frame):
         frame = self.detector.findPose(frame, draw=False)
@@ -50,24 +52,29 @@ class PullUpCounter:
         return frame
 
     def run(self):
+        import time
+        self.is_running = True
         cap = cv2.VideoCapture(self.video_path)
         if not cap.isOpened():
             print(f"Error: Video {self.video_path} not found")
+            self.is_running = False
             return
 
-        while cap.isOpened():
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30
+        frame_delay = 1.0 / fps
+
+        while self.is_running and cap.isOpened():
             success, frame = cap.read()
             if not success:
-                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                continue
-
-            frame = self.process_frame(frame)
-            cv2.imshow('Pull Up Counter', frame)
-            if cv2.waitKey(30) & 0xFF == ord('q'):
                 break
 
+            frame = self.process_frame(frame)
+            self.current_frame = frame
+            time.sleep(frame_delay)
+
+        self.is_running = False
+        self.form_msg = f"Analysis complete — {int(self.counter)} reps counted"
         cap.release()
-        cv2.destroyAllWindows()
 
     def get_status(self):
         return {

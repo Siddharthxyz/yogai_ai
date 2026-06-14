@@ -17,6 +17,8 @@ class PushUpCounter:
         self.form_msg = "Waiting for Pose"
         self.progress = 0
         self.angles = {}
+        self.current_frame = None
+        self.is_running = False
 
     def process_frame(self, frame):
         frame = self.detector.findPose(frame, draw=False)
@@ -24,7 +26,7 @@ class PushUpCounter:
 
         if len(landmarks_list) != 0:
             shoulder_angle = self.detector.findAngle(frame, 12, 14, 16, landmarks_list, draw=True)
-            hip_angle = self.detector.findAngle(frame, 24, 12, 26, landmarks_list, draw=True)
+            hip_angle = self.detector.findAngle(frame, 12, 24, 26, landmarks_list, draw=True)
             
             progress_percentage = np.interp(shoulder_angle, (60, 160), (100, 0))
             self.angles = {"shoulder": round(shoulder_angle, 1), "hip": round(hip_angle, 1)}
@@ -34,18 +36,18 @@ class PushUpCounter:
             else:
                 self.form_msg = "Keep your back straight"
 
-            if hip_angle > 150:
-                if progress_percentage >= 95:
-                    if self.direction == 0:
-                        self.counter += 0.5
-                        self.direction = 1
-                        self.feedback = "Up"
-                
-                if progress_percentage <= 5:
-                    if self.direction == 1:
-                        self.counter += 0.5
-                        self.direction = 0
-                        self.feedback = "Down"
+            # Rep counting logic (independent of hip angle to handle camera framing/estimation limits)
+            if progress_percentage >= 95:
+                if self.direction == 0:
+                    self.counter += 0.5
+                    self.direction = 1
+                    self.feedback = "Up"
+            
+            if progress_percentage <= 5:
+                if self.direction == 1:
+                    self.counter += 0.5
+                    self.direction = 0
+                    self.feedback = "Down"
             
             self.progress = progress_percentage
         else:
@@ -56,24 +58,29 @@ class PushUpCounter:
         return frame
 
     def run(self):
+        import time
+        self.is_running = True
         cap = cv2.VideoCapture(self.video_path)
         if not cap.isOpened():
             print(f"Error: Video {self.video_path} not found")
+            self.is_running = False
             return
 
-        while cap.isOpened():
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30
+        frame_delay = 1.0 / fps
+
+        while self.is_running and cap.isOpened():
             success, frame = cap.read()
             if not success:
-                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                continue
-
-            frame = self.process_frame(frame)
-            cv2.imshow('Push Up Counter', frame)
-            if cv2.waitKey(30) & 0xFF == ord('q'):
                 break
 
+            frame = self.process_frame(frame)
+            self.current_frame = frame
+            time.sleep(frame_delay)
+
+        self.is_running = False
+        self.form_msg = f"Analysis complete — {int(self.counter)} reps counted"
         cap.release()
-        cv2.destroyAllWindows()
 
     def get_status(self):
         return {

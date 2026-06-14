@@ -28,34 +28,27 @@ class BicepCurlCounterLive:
             elbow_angle = self.detector.findAngle(frame, 11, 13, 15, landmarks_list, draw=True)
             shoulder_angle = self.detector.findAngle(frame, 23, 11, 13, landmarks_list, draw=True)
             
-            progress_percentage = np.interp(elbow_angle, (50, 160), (0, 100))
+            progress_percentage = np.interp(elbow_angle, (50, 160), (100, 0))
             self.angles = {"elbow": round(elbow_angle, 1), "shoulder": round(shoulder_angle, 1)}
 
-            # Form validation - match Exercise-Counter logic
-            if elbow_angle < 150 and shoulder_angle > 150:
+            # Form validation (updates messages, but does not block counting)
+            if shoulder_angle > 150:
                 self.form_msg = "Form is Correct"
-                correct_form = 1
             else:
                 self.form_msg = "Keep your shoulder stable"
-                correct_form = 0
 
-            # Rep counting logic - match Exercise-Counter exactly
-            if correct_form == 1:
-                # At full extension
-                if progress_percentage == 100:
-                    if elbow_angle >= 160:
-                        self.feedback = "Up"
-                        if self.direction == 0:
-                            self.counter += 0.5
-                            self.direction = 1
-                
-                # At full contraction
-                if progress_percentage == 0:
-                    if elbow_angle < 50 and shoulder_angle > 150:
-                        self.feedback = "Down"
-                        if self.direction == 1:
-                            self.counter += 0.5
-                            self.direction = 0
+            # Rep counting logic (independent of shoulder angle to handle webcam limitations)
+            if progress_percentage >= 95:
+                if self.direction == 0:
+                    self.counter += 0.5
+                    self.direction = 1
+                    self.feedback = "Down"
+            
+            if progress_percentage <= 5:
+                if self.direction == 1:
+                    self.counter += 0.5
+                    self.direction = 0
+                    self.feedback = "Up"
             
             self.progress = progress_percentage
         else:

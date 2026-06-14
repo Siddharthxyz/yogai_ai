@@ -35,17 +35,17 @@ class SquatCounterLive:
             else:
                 self.form_msg = "Keep your back straight"
 
-            if hip_angle > 150:
-                if progress_percentage >= 95:
-                    if self.direction == 0:
-                        self.counter += 0.5
-                        self.direction = 1
-                        self.feedback = "Up"
-                if progress_percentage <= 5:
-                    if self.direction == 1:
-                        self.counter += 0.5
-                        self.direction = 0
-                        self.feedback = "Down"
+            # Rep counting logic (independent of hip angle to handle camera framing/estimation limits)
+            if progress_percentage >= 95:
+                if self.direction == 0:
+                    self.counter += 0.5
+                    self.direction = 1
+                    self.feedback = "Up"
+            if progress_percentage <= 5:
+                if self.direction == 1:
+                    self.counter += 0.5
+                    self.direction = 0
+                    self.feedback = "Down"
             
             self.progress = progress_percentage
         else:

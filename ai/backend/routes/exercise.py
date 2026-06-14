@@ -13,11 +13,12 @@ import logging
 import threading
 import time
 from typing import Dict, Optional
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import os
 import cv2
+import tempfile
 
 logger = logging.getLogger(__name__)
 exercise_bp = APIRouter(prefix="/exercise", tags=["Exercise"])
@@ -33,7 +34,6 @@ from services.deadlift_counter import DeadliftCounter
 from services.deadlift_counter_live import DeadliftCounterLive
 from services.pullup_counter import PullUpCounter
 from services.pullup_counter_live import PullUpCounterLive
-
 COUNTER_CLASSES = {
     "bicep_curl": {"video": BicepCurlCounter, "live": BicepCurlCounterLive},
     "pushup": {"video": PushUpCounter, "live": PushUpCounterLive},
@@ -79,8 +79,11 @@ class ThreadedCounter:
 
     def stop(self):
         self.is_running = False
+        # Propagate stop signal into the counter's own loop
+        if self.counter_instance and hasattr(self.counter_instance, 'is_running'):
+            self.counter_instance.is_running = False
         if self.thread:
-            self.thread.join(timeout=2)
+            self.thread.join(timeout=3)
         logger.info(f"Stopped session {self.session_id}")
 
     def get_status(self):
@@ -130,8 +133,11 @@ class LiveExerciseSession:
 
     def stop(self):
         self.is_running = False
+        # Propagate stop signal into the counter's own loop so the camera releases
+        if self.counter_instance and hasattr(self.counter_instance, 'is_running'):
+            self.counter_instance.is_running = False
         if self.thread:
-            self.thread.join(timeout=2)
+            self.thread.join(timeout=3)
         logger.info(f"Stopped live session {self.session_id}")
 
     def get_status(self):
@@ -202,6 +208,37 @@ def start_session(body: StartSessionRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@exercise_bp.post("/upload_video")
+async def upload_video_session(
+    exercise_type: str = Form(...),
+    video: UploadFile = File(...),
+):
+    """Save an uploaded exercise video and start a background analysis session for it."""
+    try:
+        if exercise_type not in COUNTER_CLASSES:
+            raise HTTPException(status_code=400, detail=f"Unknown exercise type: {exercise_type}")
+        if not video.filename:
+            raise HTTPException(status_code=400, detail="A video file must be provided.")
+
+        suffix = os.path.splitext(video.filename)[1] or ".mp4"
+        fd, temp_path = tempfile.mkstemp(suffix=suffix)
+        try:
+            with os.fdopen(fd, "wb") as temp_file:
+                temp_file.write(await video.read())
+
+            session = ThreadedCounter(exercise_type, temp_path)
+            session.start()
+            _sessions[session.session_id] = session
+            return session.get_status()
+        except Exception:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            raise
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @exercise_bp.get("/status/{session_id}")
 def get_status(session_id: str):
     """Get the real-time status of the exercise session."""
@@ -209,7 +246,7 @@ def get_status(session_id: str):
     if session_id in _live_sessions:
         return _live_sessions[session_id].get_status()
     
-    # Check video sessions
+    # Check video sessions (including completed ones so frontend can read final result)
     if session_id in _sessions:
         return _sessions[session_id].get_status()
     
@@ -272,8 +309,8 @@ def get_stream(session_id: str):
 def get_frame(session_id: str):
     """Get a single frame from the session as JPEG"""
     session = _live_sessions.get(session_id) or _sessions.get(session_id)
-    if not session or not session.is_running:
-        raise HTTPException(status_code=404, detail="Session not found or not running")
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
     
     try:
         # Get the latest processed frame from counter
@@ -287,7 +324,9 @@ def get_frame(session_id: str):
                         media_type="image/jpeg"
                     )
         
-        raise HTTPException(status_code=500, detail="Could not get frame")
+        raise HTTPException(status_code=503, detail="Frame not yet available")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Frame capture error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
